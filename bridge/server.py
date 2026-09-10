@@ -197,11 +197,21 @@ POSTURES = {
         joint_targets={f: {j: 8.0 for j in JOINTS[f]} for f in FINGERS},
         spread=0.55, opp=0.10, wrist={"pitch": 0.0, "yaw": 0.0}, forearm={"roll": 0.0},
     ),
+    "middle_finger": dict(
+        joint_targets={
+            "thumb": {"cmc": 45.0, "mcp": 50.0, "ip": 35.0},
+            "index": {"mcp": 85.0, "pip": 92.0, "dip": 68.0},
+            "middle": {"mcp": 6.0, "pip": 5.0, "dip": 3.0},
+            "ring": {"mcp": 85.0, "pip": 92.0, "dip": 68.0},
+            "pinky": {"mcp": 85.0, "pip": 92.0, "dip": 68.0},
+        },
+        spread=0.05, opp=0.30, wrist={"pitch": 0.0, "yaw": 0.0}, forearm={"roll": 0.0},
+    ),
 }
 # fill in missing thumb targets for reach
 POSTURES["reach"]["joint_targets"]["thumb"] = POSTURES["reach"].pop("thumb")
 
-GOAL_POSTURES = {k: v for k, v in POSTURES.items() if k in ("reach", "grasp", "release", "point", "wave", "fist", "ripple", "pinch", "ok", "shaka", "rock", "spock")}
+GOAL_POSTURES = {k: v for k, v in POSTURES.items() if k in ("reach", "grasp", "release", "point", "wave", "fist", "ripple", "pinch", "ok", "shaka", "rock", "spock", "middle_finger")}
 
 
 @dataclass
