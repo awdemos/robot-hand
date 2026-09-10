@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tendon Hand — Kinematic Study</title>
+<style>
+  :root{
+    --bg:#0c0d10; --panel:#131519; --panel-2:#1a1d23; --ink:#e3dfd6; --dim:#7e7971;
+    --accent:#6cb6ff; --ok:#57a773; --warn:#c96b4a;
+    --red:#e9575c; --blue:#4f8fea; --yellow:#eac447; --green:#6ab889; --purple:#a27de3;
+    --line:#ffffff10;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 "SF Mono","Cascadia Code",Consolas,monospace;overflow:hidden;}
+  #app{display:grid;grid-template-columns:230px 1fr 300px;grid-template-rows:1fr 68px;height:100%;}
+  #scene{grid-column:2;grid-row:1;position:relative;background:radial-gradient(circle at 50% 30%,#12141a 0%,#090a0c 70%);}
+  canvas{display:block;width:100%;height:100%;}
+  .sidebar{padding:16px;overflow:auto;border-right:1px solid var(--line);background:var(--panel);}
+  .sidebar h2{font-size:10px;letter-spacing:1.8px;text-transform:uppercase;color:var(--dim);margin:0 0 12px;}
+  .stat{font-size:12px;margin:9px 0;display:flex;justify-content:space-between;}
+  .stat b{color:var(--accent);}
+  .card{background:var(--panel-2);border:1px solid var(--line);border-radius:7px;padding:12px;margin:14px 0;}
+  .card h3{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);margin:0 0 10px;}
+  .diff{font-family:monospace;font-size:11px;color:var(--ok);}
+  .right{grid-column:3;grid-row:1;padding:18px;overflow:auto;border-left:1px solid var(--line);background:var(--panel);}
+  .right h1{font-size:20px;margin:0 0 4px;letter-spacing:-0.5px;}
+  .right .subtitle{color:var(--dim);font-size:11px;margin-bottom:20px;}
+  .section{margin:20px 0;}
+  .section h3{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);margin:0 0 10px;}
+  .study{cursor:pointer;padding:9px 11px;border:1px solid var(--line);border-radius:6px;margin:7px 0;transition:.12s;background:var(--panel-2);}
+  .study:hover{border-color:var(--accent);}
+  .study.active{border-color:var(--accent);background:linear-gradient(90deg,#182231,#1a2331);}
+  .study .n{display:inline-block;width:22px;color:var(--accent);font-weight:700;}
+  .study small{display:block;color:var(--dim);font-size:10px;margin-top:3px;}
+  .notes{font-size:11px;line-height:1.6;color:#c3bdb2;}
+  .notes p{margin:0 0 9px;}
+  .readout{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;font-size:10px;}
+  .readout div{background:var(--panel-2);padding:7px;border-radius:4px;}
+  .readout span{display:block;color:var(--dim);font-size:9px;}
+  .emg .bar{height:4px;background:#2a2e35;border-radius:2px;margin-top:5px;overflow:hidden;}
+  .emg .fill{height:100%;width:0%;background:var(--accent);transition:width .1s linear;}
+  .toggle{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:11px;}
+  .slider{margin:10px 0;}
+  .slider label{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-bottom:4px;}
+  .slider input{width:100%;}
+  .playback{grid-column:1/-1;grid-row:2;border-top:1px solid var(--line);background:var(--panel);display:flex;align-items:center;gap:12px;padding:0 18px;}
+  .playback button{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);border-radius:4px;padding:7px 14px;cursor:pointer;font-family:inherit;font-size:12px;}
+  .playback button:hover{border-color:var(--accent);}
+  .playback input[type=range]{flex:1;}
+  .time{font-size:11px;color:var(--dim);min-width:110px;text-align:right;}
+  .corner{position:absolute;pointer-events:none;font-size:10px;color:var(--dim);text-shadow:0 1px 3px #000;}
+  #tl{top:14px;left:16px;}
+  #br{bottom:14px;right:16px;text-align:right;}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:10px;margin-top:10px;}
+  .legend i{display:inline-block;width:12px;height:3px;margin-right:4px;vertical-align:middle;}
+  #loading{position:absolute;inset:0;display:grid;place-items:center;background:var(--bg);z-index:10;}
+  .loader{font-size:12px;letter-spacing:2px;color:var(--accent);animation:blink 1.2s infinite;}
+  @keyframes blink{0%,100%{opacity:1;}50%{opacity:.4;}}
+  .badge{display:inline-block;font-size:9px;background:#1f2b3d;color:var(--accent);border:1px solid #2b3c55;border-radius:3px;padding:1px 5px;margin-left:6px;}
+  .infocard{position:absolute;background:rgba(10,12,16,0.92);border:1px solid var(--line);border-radius:6px;padding:12px;max-width:220px;box-shadow:0 8px 24px rgba(0,0,0,0.4);backdrop-filter:blur(6px);pointer-events:none;z-index:20;}
+</style>
+<script type="importmap">
+{"imports": {"three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <h2>Project</h2>
+    <div class="card">
+      <h3>Stats</h3>
+      <div class="stat">Model lines <b>4,216</b></div>
+      <div class="stat">Files <b>8</b></div>
+      <div class="stat">STEP exports <b>18</b></div>
+      <div class="stat">Assembly size <b>14.7 MB</b></div>
+      <div class="stat">Cords <b>44</b></div>
+      <div class="stat">Joints <b>22</b></div>
+      <div style="font-size:9px;color:var(--dim);margin-top:8px;">Counts include historical revisions.</div>
+    </div>
+    <div class="card">
+      <h3>Web preview</h3>
+      <div style="font-size:11px;color:var(--ok);">● live at 127.0.0.1:8765</div>
+    </div>
+    <div class="card">
+      <h3>Latest diff</h3>
+      <div class="diff">Edited 3 files +42 −11</div>
+      <div style="margin-top:10px;display:flex;gap:6px;">
+        <button style="flex:1;background:#252a31;border:1px solid var(--line);color:var(--dim);border-radius:4px;padding:5px;font-size:10px;cursor:pointer;">Undo</button>
+        <button style="flex:1;background:#252a31;border:1px solid var(--line);color:var(--dim);border-radius:4px;padding:5px;font-size:10px;cursor:pointer;">Review</button>
+      </div>
+    </div>
+  </aside>
+
+  <main id="scene">
+    <div id="loading"><div class="loader">ASSEMBLING TENDON HAND...</div></div>
+    <div class="corner" id="tl">Right hand / Human scale<br>frame <span id="frame">0</span> · t=<span id="tread">0.00</span>s</div>
+    <div class="corner" id="br">Scene details ▾<br><span id="detail">44 cords · 22 joints · 5 studies</span></div>
+  </main>
+
+  <aside class="right">
+    <h1>Tendon hand.</h1>
+    <div class="subtitle">An open-frame hand. Follow the cords from the forearm to the fingertips.</div>
+
+    <div class="section">
+      <h3>Movement Library — 05 studies</h3>
+      <div class="study active" data-s="0"><span class="n">01</span> Make a fist<small>Four fingers close, thumb opposes last.</small></div>
+      <div class="study" data-s="1"><span class="n">02</span> Ripple<small>Same hardware, different timing. The roll is software.</small></div>
+      <div class="study" data-s="2"><span class="n">03</span> Pinch<small>Thumb and index meet in space.</small></div>
+      <div class="study" data-s="3"><span class="n">04</span> Hand signs<small>Peace, metal, shaka, spock — sequential.</small></div>
+      <div class="study" data-s="4"><span class="n">05</span> Every actuator<small>All 44 cords sweep across full range.</small></div>
+    </div>
+
+    <div class="section">
+      <h3>Inside the movement</h3>
+      <div class="notes" id="notes">
+        <p><b>01 — Fist.</b> The flexor cords shorten on their spools. Distal joints close last because they have smaller moment arms and less mechanical advantage.</p>
+        <p>Watch the thumb: it waits until the fingers are nearly closed before opposing, the way a real hand avoids self-collision.</p>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Joint readout</h3>
+      <div class="readout" id="readout">
+        <div><span>index mcp</span><b id="r-index-mcp">0°</b></div>
+        <div><span>index pip</span><b id="r-index-pip">0°</b></div>
+        <div><span>middle mcp</span><b id="r-middle-mcp">0°</b></div>
+        <div><span>middle pip</span><b id="r-middle-pip">0°</b></div>
+        <div><span>thumb cmc</span><b id="r-thumb-cmc">0°</b></div>
+        <div><span>thumb mcp</span><b id="r-thumb-mcp">0°</b></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Nervous drive <span class="badge">EMG</span></h3>
+      <div id="emg"></div>
+    </div>
+
+    <div class="section">
+      <h3>View &amp; visibility</h3>
+      <div class="toggle"><label>Links</label><input type="checkbox" id="v-links" checked></div>
+      <div class="toggle"><label>Cords</label><input type="checkbox" id="v-cords" checked></div>
+      <div class="toggle"><label>Pulleys</label><input type="checkbox" id="v-pulleys" checked></div>
+      <div class="toggle"><label>Actuators</label><input type="checkbox" id="v-actuators" checked></div>
+      <div class="toggle"><label>Skeleton overlay</label><input type="checkbox" id="v-skeleton"></div>
+      <div class="toggle"><label>Nerve pulses</label><input type="checkbox" id="v-pulses" checked></div>
+      <div class="slider"><label><span>Exploded view</span><span id="explodeVal">0%</span></label><input type="range" id="explode" min="0" max="100" value="0"></div>
+      <div class="legend">
+        <div><i style="background:var(--red)"></i>index</div>
+        <div><i style="background:var(--blue)"></i>middle</div>
+        <div><i style="background:var(--yellow)"></i>ring</div>
+        <div><i style="background:var(--green)"></i>pinky</div>
+        <div><i style="background:var(--purple)"></i>thumb</div>
+      </div>
+    </div>
+  </aside>
+
+  <div id="infocard" class="infocard" style="display:none;">
+    <div id="card-title" style="font-weight:700;font-size:13px;margin-bottom:6px;"></div>
+    <div id="card-body" style="font-size:11px;line-height:1.5;color:#c3bdb2;"></div>
+  </div>
+
+  <div class="playback">
+    <button id="prev">←</button>
+    <button id="play">Pause</button>
+    <button id="next">→</button>
+    <button id="restart">R</button>
+    <input type="range" id="scrub" min="0" max="1000" value="0">
+    <div class="time" id="time">00.00 / 08.00</div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0b0d);
+scene.fog = new THREE.Fog(0x0a0b0d, 45, 100);
+
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 250);
+camera.position.set(-6, 3, -22);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+document.getElementById('scene').appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 8;
+controls.maxDistance = 80;
+controls.target.set(0, 0.5, -6);
+
+scene.add(new THREE.HemisphereLight(0xdce4ea, 0x151920, 0.55));
+const key = new THREE.DirectionalLight(0xfff6eb, 1.8);
+key.position.set(14, 28, -8);
+key.castShadow = true;
+key.shadow.mapSize.set(2048,2048);
+key.shadow.camera.left=-22; key.shadow.camera.right=22; key.shadow.camera.top=22; key.shadow.camera.bottom=-22;
+key.shadow.bias=-0.0004;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x8fb6ff, 1.0);
+rim.position.set(-18, 10, -18);
+scene.add(rim);
+const fill = new THREE.PointLight(0xffecd1, 16, 48, 2);
+fill.position.set(4, 8, -12);
+scene.add(fill);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(140,140), new THREE.MeshStandardMaterial({color:0x111418,roughness:0.92,metalness:0.05}));
+ground.rotation.x=-Math.PI/2; ground.position.y=-4.2; ground.receiveShadow=true; scene.add(ground);
+const grid = new THREE.GridHelper(90,90,0x2a2e35,0x1a1d22); grid.position.y=-4.18; scene.add(grid);
+
+const COLORS = { index:0xe9575c, middle:0x4f8fea, ring:0xeac447, pinky:0x6ab889, thumb:0xa27de3 };
+const FINGERS = ['index','middle','ring','pinky','thumb'];
+const JOINTS = {
+  index:  ['cmc','mcp','pip','dip'],
+  middle: ['cmc','mcp','pip','dip'],
+  ring:   ['cmc','mcp','pip','dip'],
+  pinky:  ['cmc','mcp','pip','dip'],
+  thumb:  ['cmc','mcp','ip']
+};
+const SEG_LEN = {
+  index:  [3.6, 2.4, 1.8, 1.35],
+  middle: [3.9, 2.6, 2.0, 1.5],
+  ring:   [3.7, 2.4, 1.8, 1.35],
+  pinky:  [3.0, 1.9, 1.4, 1.05],
+  thumb:  [2.2, 2.0, 1.6]
+};
+const SPREAD_BASE = { index:-9, middle:0, ring:9, pinky:20, thumb:75 };
+const BASES = {
+  index:  [2.0, 0, -3.0],
+  middle: [0.7, 0, -3.6],
+  ring:   [-0.7, 0, -3.3],
+  pinky:  [-1.8, 0, -2.6],
+  thumb:  [3.2, 0.65, -1.8]
+};
+const D2R = Math.PI/180;
+
+const root = new THREE.Group();
+scene.add(root);
+
+const pivotMat = new THREE.MeshStandardMaterial({color:0xe8ecf0,roughness:0.18,metalness:0.92});
+const pulleyMat = new THREE.MeshStandardMaterial({color:0xdce0e6,roughness:0.22,metalness:0.88});
+const metacarpalMat = new THREE.MeshStandardMaterial({color:0xdce0e6,roughness:0.25,metalness:0.85});
+const alumMat = new THREE.MeshStandardMaterial({color:0xdce0e6,roughness:0.28,metalness:0.85});
+const darkAlumMat = new THREE.MeshStandardMaterial({color:0xbdc2c8,roughness:0.32,metalness:0.82});
+const anodMat = {
+  index: new THREE.MeshStandardMaterial({color:0xe9575c,roughness:0.45,metalness:0.35,emissive:0x3d1012,emissiveIntensity:0.2}),
+  middle:new THREE.MeshStandardMaterial({color:0x4f8fea,roughness:0.45,metalness:0.35,emissive:0x0f1f3d,emissiveIntensity:0.2}),
+  ring:  new THREE.MeshStandardMaterial({color:0xeac447,roughness:0.45,metalness:0.35,emissive:0x2d2408,emissiveIntensity:0.2}),
+  pinky: new THREE.MeshStandardMaterial({color:0x6ab889,roughness:0.45,metalness:0.35,emissive:0x0f2a18,emissiveIntensity:0.2}),
+  thumb: new THREE.MeshStandardMaterial({color:0xa27de3,roughness:0.45,metalness:0.35,emissive:0x1e1533,emissiveIntensity:0.2})
+};
+
+// Open-frame metacarpal bridge (thin bars, no central block)
+function metacarpalBar(a, b, thick=0.10){
+  const len = a.distanceTo(b);
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(thick, thick, len, 12), metacarpalMat);
+  m.position.copy(a).lerp(b, 0.5);
+  m.lookAt(b);
+  m.rotateX(Math.PI/2);
+  m.castShadow=true; m.receiveShadow=true;
+  root.add(m);
+}
+// longitudinal bars
+const mcY = 0.15;
+for(let z of [-2.4, -3.9]){
+  metacarpalBar(new THREE.Vector3(-2.4, mcY, z), new THREE.Vector3(2.6, mcY, z), 0.10);
+}
+// cross bars connecting knuckle bases
+const knuckles = ['index','middle','ring','pinky'].map(f => new THREE.Vector3(...BASES[f]));
+knuckles.forEach(k => metacarpalBar(new THREE.Vector3(k.x, mcY, -2.4), new THREE.Vector3(k.x, mcY, -3.9), 0.08));
+// thumb saddle: visible platform at the radial side of the metacarpal bridge
+const thumbSaddle = new THREE.Mesh(new THREE.BoxGeometry(0.55,0.12,0.55), metacarpalMat);
+thumbSaddle.position.set(3.2, mcY+0.50, -1.8); thumbSaddle.rotation.y = -0.45; root.add(thumbSaddle);
+thumbSaddle.userData = {part:'saddle', name:'Thumb saddle', desc:'Stainless carpometacarpal saddle. The thumb metacarpal originates here, outside the main palm plane.'};
+// connect saddle outward to the hand edge, not inward to index
+metacarpalBar(new THREE.Vector3(3.2, mcY+0.40, -1.8), new THREE.Vector3(3.3, mcY, -3.0), 0.08);
+// thumb metacarpal strut to wrist
+metacarpalBar(new THREE.Vector3(3.2, mcY+0.40, -1.8), new THREE.Vector3(1.8, mcY, 2.0), 0.10);
+
+// Subtle prosthetic forearm sleeve (human-scale context, kept dark so it doesn't dominate)
+const sleeve = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.55, 1.35, 10, 32, 1, true),
+  new THREE.MeshStandardMaterial({color:0xbdc2c8,roughness:0.55,metalness:0.45,transparent:true,opacity:0.45,side:THREE.DoubleSide})
+);
+sleeve.rotation.x = Math.PI/2; sleeve.position.set(0, 0.45, 10.2); sleeve.castShadow=false; root.add(sleeve);
+// sleeve seam rings
+const sleeveRing = new THREE.Mesh(new THREE.TorusGeometry(1.55, 0.05, 8, 40), new THREE.MeshStandardMaterial({color:0xdce0e6,metalness:0.75,roughness:0.40}));
+sleeveRing.position.set(0,0.45,5.2); root.add(sleeveRing);
+const sleeveRing2 = sleeveRing.clone(); sleeveRing2.position.set(0,0.45,15.2); root.add(sleeveRing2);
+const cuff = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 2.2, 32, 1, true), new THREE.MeshStandardMaterial({color:0xcfd4da,roughness:0.50,metalness:0.50,side:THREE.DoubleSide}));
+cuff.rotation.x = Math.PI/2; cuff.position.set(0, 0.45, 4.0); cuff.castShadow=true; root.add(cuff);
+// cuff end rings
+const cuffRing = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.08, 10, 40), new THREE.MeshStandardMaterial({color:0xdce0e6,metalness:0.75,roughness:0.35}));
+cuffRing.position.set(0,0.45,2.9); root.add(cuffRing);
+const cuffRing2 = cuffRing.clone(); cuffRing2.position.set(0,0.45,5.1); root.add(cuffRing2);
+
+// actuator mounting rail inside cuff
+const rail = new THREE.Mesh(new THREE.BoxGeometry(2.8,0.14,4.2), new THREE.MeshStandardMaterial({color:0xdce0e6,metalness:0.55,roughness:0.40}));
+rail.position.set(0, 1.05, 4.0); root.add(rail);
+
+const digits = {};
+const pulleys = [], pivots = [], actuators = [], tendons = [], links = [], screws = [];
+
+// Helper geometry caches
+const capGeo = new THREE.CylinderGeometry(0.26,0.26,0.12,20);
+const screwGeo = new THREE.CylinderGeometry(0.06,0.06,0.22,8);
+
+FINGERS.forEach(f => {
+  const anchor = new THREE.Group();
+  anchor.position.set(...BASES[f]);
+  root.add(anchor);
+  const joints = [];
+  let parent = anchor;
+  const lenArr = SEG_LEN[f];
+  for(let i=0;i<lenArr.length;i++){
+    const isBase = i===0;
+    const len = lenArr[i];
+    const pivot = new THREE.Group();
+    pivot.position.set(0, 0, isBase ? 0 : -lenArr[i-1]);
+    parent.add(pivot);
+
+    // joint hub
+    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.28,20,20), pivotMat);
+    hub.castShadow=true; pivot.add(hub); pivots.push(hub);
+    hub.userData = {part:'joint hub', name:`${f} ${jn.toUpperCase()} hub`, desc:'316 stainless joint body. Houses the pivot bearing and tendon pulleys.'};
+    // side caps
+    const capL = new THREE.Mesh(capGeo, alumMat);
+    capL.rotation.x=Math.PI/2; capL.position.set(0.26,0,0); pivot.add(capL); pivots.push(capL);
+    capL.userData = {part:'cap', name:`${f} ${jn.toUpperCase()} bearing cap`, desc:'Stainless bearing cap. Captures the pivot pin and seals the joint.'};
+    const capR = new THREE.Mesh(capGeo, alumMat);
+    capR.rotation.x=Math.PI/2; capR.position.set(-0.26,0,0); pivot.add(capR); pivots.push(capR);
+    capR.userData = capL.userData;
+
+    // screw heads
+    const screwMat = new THREE.MeshStandardMaterial({color:0xe8ecf0,metalness:0.9,roughness:0.25});
+    const s1 = new THREE.Mesh(screwGeo, screwMat);
+    s1.rotation.x=Math.PI/2; s1.position.set(0.32,0,0); pivot.add(s1); screws.push(s1);
+    s1.userData = {part:'screw', name:`${f} ${jn.toUpperCase()} cap screw`, desc:'Titanium SHCS retains the bearing cap.'};
+    const s2 = s1.clone(); s2.position.set(-0.32,0,0); pivot.add(s2); screws.push(s2);
+    s2.userData = s1.userData;
+
+    // grooved pulleys
+    const pulF = new THREE.Mesh(new THREE.TorusGeometry(0.30,0.05,10,28), pulleyMat);
+    pulF.position.set(0.28,0,0); pulF.rotation.y=Math.PI/2; pivot.add(pulF); pulleys.push(pulF);
+    pulF.userData = {part:'pulley', name:`${f} ${jn.toUpperCase()} flexor pulley`, desc:'Stainless grooved sheave. Redirects the flexor cord around the joint axis.'};
+    const pulE = new THREE.Mesh(new THREE.TorusGeometry(0.30,0.05,10,28), pulleyMat);
+    pulE.position.set(-0.28,0,0); pulE.rotation.y=Math.PI/2; pivot.add(pulE); pulleys.push(pulE);
+    pulE.userData = {part:'pulley', name:`${f} ${jn.toUpperCase()} extensor pulley`, desc:'Stainless grooved sheave. Redirects the extensor cord around the joint axis.'};
+
+    // bone link: thin titanium wire-frame rod (not a tube)
+    const linkGroup = new THREE.Group();
+    const rodMat = new THREE.MeshStandardMaterial({color:0xdce0e6,roughness:0.25,metalness:0.9});
+    // central spine
+    const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.030,len,8), rodMat);
+    spine.rotation.x = Math.PI/2; spine.position.set(0,0,-len/2); spine.castShadow=true; linkGroup.add(spine);
+    // four thin longitudinal rails
+    for(let a=0;a<4;a++){
+      const ang = (Math.PI/2)*a;
+      const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.015,len*0.88,6), rodMat);
+      rail.rotation.x = Math.PI/2; rail.rotation.y = ang;
+      rail.position.set(Math.cos(ang)*0.07, Math.sin(ang)*0.07, -len/2);
+      rail.castShadow=true; linkGroup.add(rail);
+    }
+    // cross rungs every quarter length
+    const rungMat = new THREE.MeshStandardMaterial({color:0xbdc2c8,roughness:0.3,metalness:0.85});
+    const rungCount = Math.max(2, Math.floor(len/0.7));
+    for(let r=1;r<=rungCount;r++){
+      const z = -len * (r/(rungCount+1));
+      const rung = new THREE.Mesh(new THREE.TorusGeometry(0.07,0.012,5,20), rungMat);
+      rung.rotation.x = Math.PI/2; rung.position.set(0,0,z); linkGroup.add(rung);
+    }
+    pivot.add(linkGroup); links.push(linkGroup);
+    linkGroup.userData = {part:'link', name:`${f} ${isBase?'metacarpal':'phalanx'} ${i+1}`, desc:`Titanium wire-frame ${isBase?'metacarpal':'phalangeal'} strut. Keeps the joint light and stiff.`};
+
+    joints.push({ pivot, len, f, idx:i });
+    parent = pivot;
+  }
+  digits[f] = { anchor, joints };
+
+  // actuators and tendons: one pair per joint
+  JOINTS[f].forEach((jn, ji) => {
+    ['flexor','extensor'].forEach((side, si) => {
+      const g = new THREE.Group();
+      // spool cylinder
+      const spool = new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.14,0.22,16), anodMat[f]);
+      spool.rotation.x = Math.PI/2; g.add(spool);
+      spool.userData = {part:'spool', name:`${f} ${jn.toUpperCase()} ${side} spool`, desc:'Anodized aluminum actuator spool. Reels the tendon in under motor torque.'};
+      // block base
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.42,0.42,0.5), new THREE.MeshStandardMaterial({color:0xcfd4da,roughness:0.40,metalness:0.75}));
+      base.position.set(0,0,0.32); g.add(base);
+      base.userData = {part:'actuator', name:`${f} ${jn.toUpperCase()} ${side} actuator`, desc:'Stainless actuator block. Houses the motor and spool bearings.'};
+      const xBase = BASES[f][0];
+      const xOff = side==='flexor'? 0.24 : -0.24;
+      const yPos = 2.0 + ji*0.22;
+      const zPos = 4.0 + FINGERS.indexOf(f)*0.28 + si*0.10;
+      g.position.set(xBase + xOff + (ji-1.5)*0.10, yPos, zPos);
+      g.castShadow=true; root.add(g); actuators.push(g);
+
+      const lineGeo = new THREE.BufferGeometry();
+      const lineMat = new THREE.LineBasicMaterial({ color: COLORS[f], linewidth: 2, transparent:true, opacity:0.95 });
+      const line = new THREE.Line(lineGeo, lineMat);
+      root.add(line);
+
+      // nerve pulse sphere + soft halo
+      const pulseMat = new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.0,blending:THREE.AdditiveBlending,depthWrite:false});
+      const pulse = new THREE.Mesh(new THREE.SphereGeometry(0.001,4,4), pulseMat);
+      const haloMat = new THREE.MeshBasicMaterial({color:COLORS[f],transparent:true,opacity:0.0,blending:THREE.AdditiveBlending,depthWrite:false});
+      const halo = new THREE.Mesh(new THREE.SphereGeometry(0.001,4,4), haloMat);
+      pulse.add(halo); pulse.visible=false; root.add(pulse);
+
+      tendons.push({ f, ji, side, line, spoolGroup:g, spool, pulse, halo, basePos:g.position.clone() });
+    });
+  });
+});
+
+// skeleton overlay
+const skelMat = new THREE.LineBasicMaterial({ color:0x58a6ff, transparent:true, opacity:0.22 });
+const skelLines = [];
+FINGERS.forEach(f => {
+  const pts = [new THREE.Vector3(0,0,0)];
+  let z=0; SEG_LEN[f].forEach(len => { z-=len; pts.push(new THREE.Vector3(0,0,z)); });
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const line = new THREE.Line(geo, skelMat); line.visible=false; root.add(line); skelLines.push(line);
+});
+
+const state = {
+  angles: Object.fromEntries(FINGERS.map(f => [f, Object.fromEntries(JOINTS[f].map(j => [j,0]))])),
+  spread: 0, opposition: 0, wrist: {pitch:0, yaw:0}, forearm: {roll:0},
+  emg: Object.fromEntries(FINGERS.map(f => [f, {flex:0, ext:0}]))
+};
+
+function getWorldPos(obj, localOff){
+  return localOff.clone().applyMatrix4(obj.matrixWorld);
+}
+
+function updateTendons(){
+  tendons.forEach(t => {
+    const d = digits[t.f];
+    const j = d.joints[t.ji];
+    if(!j) return;
+    const pts = [];
+    // spool position with shortening visual
+    const angle = state.angles[t.f][JOINTS[t.f][t.ji]] || 0;
+    const demand = t.side==='flexor' ? angle/90 : (90-angle)/90;
+    const spoolPos = t.basePos.clone().add(new THREE.Vector3(0,0, demand*0.40));
+    pts.push(spoolPos);
+
+    // route through pulleys up to this joint
+    for(let k=0;k<=t.ji;k++){
+      const jj = d.joints[k];
+      const sideOff = new THREE.Vector3(t.side==='flexor'?0.28:-0.28, 0, 0);
+      pts.push(getWorldPos(jj.pivot, sideOff));
+    }
+    // insertion on distal side of this phalanx
+    const ins = getWorldPos(j.pivot, new THREE.Vector3(t.side==='flexor'?0.10:-0.10, 0.04, -j.len*0.82));
+    pts.push(ins);
+
+    const tension = Math.max(0, demand);
+    t.line.geometry.setFromPoints(pts);
+    t.line.material.color.setHex(COLORS[t.f]);
+    t.line.material.opacity = 0.55 + 0.45*tension;
+    t.line.material.linewidth = 3;
+
+    // spool rotation
+    t.spool.rotation.x = -demand * Math.PI * 2;
+
+    // nerve pulse
+    if(document.getElementById('v-pulses').checked){
+      const pulseT = (performance.now()/1000 * (1.2 + tension*2.5) + t.ji*0.3 + (t.side==='flexor'?0:0.5)) % 1;
+      const segIdx = Math.min(pts.length-2, Math.floor(pulseT*(pts.length-1)));
+      const segT = (pulseT*(pts.length-1)) - segIdx;
+      const p = new THREE.Vector3().lerpVectors(pts[segIdx], pts[segIdx+1], segT);
+      t.pulse.position.copy(p);
+      t.pulse.visible = false;
+    } else {
+      t.pulse.visible = false;
+    }
+  });
+}
+
+function applyAngles(){
+  FINGERS.forEach(f => {
+    const d = digits[f];
+    const baseSpread = THREE.MathUtils.degToRad(SPREAD_BASE[f]) + (f==='thumb'? state.opposition*0.35 : state.spread*(f==='index'?-0.13 : f==='pinky'?0.13 : 0));
+    d.anchor.rotation.y = baseSpread;
+    d.joints.forEach((j, i) => {
+      const jn = JOINTS[f][i];
+      j.pivot.rotation.x = (state.angles[f][jn] || 0) * D2R;
+    });
+  });
+  root.rotation.x = state.wrist.pitch * 0.25;
+  root.rotation.y = state.wrist.yaw * 0.25 + state.forearm.roll * 0.6;
+}
+
+const clamp = (x,a,b)=>Math.max(a,Math.min(b,x));
+const smooth = (a,b,t)=>a+(b-a)*t;
+const ease = t=> t<0.5?2*t*t : 1-Math.pow(-2*t+2,2)/2;
+
+function resetAngles(){
+  FINGERS.forEach(f => JOINTS[f].forEach(j => state.angles[f][j]=0));
+  state.spread=0; state.opposition=0; state.wrist={pitch:0,yaw:0}; state.forearm={roll:0};
+}
+
+function sampleStudy(s, t){
+  const T = studyDurations[s];
+  let u = clamp(t/T,0,1);
+  resetAngles();
+  const a = state.angles;
+  if(s===0){ // fist
+    ['index','middle','ring','pinky'].forEach((f,i)=>{
+      const delay = i*0.04;
+      const pu = clamp((u-delay)/0.96,0,1);
+      a[f].mcp = smooth(0,88,ease(pu));
+      a[f].pip = smooth(0,98,ease(pu));
+      a[f].dip = smooth(0,75,ease(pu));
+      a[f].cmc = smooth(0,18,ease(pu));
+    });
+    const thu = clamp((u-0.35)/0.65,0,1);
+    a.thumb.cmc = smooth(0,48,ease(thu));
+    a.thumb.mcp = smooth(0,58,ease(thu));
+    a.thumb.ip = smooth(0,38,ease(thu));
+    state.opposition = ease(thu)*0.95;
+  }
+  if(s===1){ // ripple
+    const order = ['index','middle','ring','pinky'];
+    order.forEach((f,i)=>{
+      const beat = i*0.18;
+      const pu = clamp((u-beat)/0.55,0,1);
+      a[f].mcp = smooth(0,88,ease(pu));
+      a[f].pip = smooth(0,98,ease(pu));
+      a[f].dip = smooth(0,75,ease(pu));
+      a[f].cmc = smooth(0,18,ease(pu));
+    });
+    a.thumb.cmc = smooth(0,22,ease(clamp(u/0.9,0,1)));
+    state.spread = 0.22;
+  }
+  if(s===2){ // pinch
+    const p = ease(clamp(u*1.15,0,1));
+    a.thumb.cmc = smooth(0,52,p); a.thumb.mcp = smooth(0,62,p); a.thumb.ip = smooth(0,36,p);
+    a.index.mcp = smooth(0,58,p); a.index.pip = smooth(0,46,p); a.index.dip = smooth(0,26,p);
+    ['middle','ring','pinky'].forEach(f => { a[f].mcp=10; a[f].pip=7; a[f].dip=5; a[f].cmc=3; });
+    state.opposition = p*0.98;
+    state.wrist.yaw = -0.08;
+  }
+  if(s===3){ // hand signs sequence: peace, metal, shaka, spock
+    const beats = [0,0.22,0.48,0.74];
+    const sig = u<0.22?0 : u<0.48?1 : u<0.74?2 : 3;
+    const ru = clamp((u-beats[sig])/0.20,0,1);
+    const names = ['peace','metal','shaka','spock'];
+    const signAngles = {
+      peace: {index:{mcp:0,pip:0,dip:0,cmc:0}, middle:{mcp:0,pip:0,dip:0,cmc:0}, ring:{mcp:86,pip:96,dip:74,cmc:5}, pinky:{mcp:84,pip:90,dip:68,cmc:5}, thumb:{cmc:14,mcp:18,ip:9}},
+      metal: {index:{mcp:0,pip:0,dip:0,cmc:0}, middle:{mcp:88,pip:95,dip:72,cmc:5}, ring:{mcp:84,pip:90,dip:68,cmc:5}, pinky:{mcp:0,pip:0,dip:0,cmc:0}, thumb:{cmc:12,mcp:16,ip:7}},
+      shaka:  {index:{mcp:86,pip:94,dip:70,cmc:5}, middle:{mcp:86,pip:94,dip:70,cmc:5}, ring:{mcp:86,pip:94,dip:70,cmc:5}, pinky:{mcp:0,pip:0,dip:0,cmc:0}, thumb:{cmc:22,mcp:24,ip:14}},
+      spock:  {index:{mcp:0,pip:0,dip:0,cmc:0}, middle:{mcp:0,pip:0,dip:0,cmc:0}, ring:{mcp:84,pip:90,dip:68,cmc:5}, pinky:{mcp:84,pip:90,dip:68,cmc:5}, thumb:{cmc:10,mcp:14,ip:6}}
+    };
+    FINGERS.forEach(f => {
+      JOINTS[f].forEach(jn => {
+        const cur = signAngles[names[sig]][f][jn] || 0;
+        const prev = sig>0 ? signAngles[names[sig-1]][f][jn] || 0 : 0;
+        a[f][jn] = smooth(prev, cur, ease(ru));
+      });
+    });
+    state.spread = sig===3 ? 0.48 : 0.28;
+  }
+  if(s===4){ // every actuator sweep
+    FINGERS.forEach((f,fi) => {
+      JOINTS[f].forEach((jn,ji) => {
+        const phase = (fi*0.7 + ji*0.35) + u*Math.PI*2;
+        a[f][jn] = 42 + 44*Math.sin(phase);
+      });
+    });
+    state.forearm.roll = Math.sin(u*Math.PI*2)*0.35;
+  }
+  // EMG estimates
+  FINGERS.forEach(f => {
+    const flexSum = JOINTS[f].reduce((s,j)=>s+(a[f][j]/90),0)/JOINTS[f].length;
+    state.emg[f].flex = flexSum;
+    state.emg[f].ext = 1 - flexSum;
+  });
+}
+
+const studyDurations = [5,6,5,10,8];
+const studyNotes = [
+  `<p><b>01 — Fist.</b> The flexor cords shorten on their spools. Distal joints close last because they have smaller moment arms and less mechanical advantage.</p><p>Watch the thumb: it waits until the fingers are nearly closed before opposing, the way a real hand avoids self-collision.</p>`,
+  `<p><b>02 — Ripple.</b> Identical hardware to the fist; only the timing differs. Each finger gets the same curl one beat after the one before it.</p><p>The roll is software. Nothing in the mechanism couples the fingers together — each cord is independent from its own actuator.</p>`,
+  `<p><b>03 — Pinch.</b> Thumb CMC/MCP flex and the index curls until the pads meet in space. The other digits stay extended but relaxed to clear the workspace.</p><p>This is a precision grasp: high thumb opposition, low overall force.</p>`,
+  `<p><b>04 — Hand signs.</b> Peace, metal, shaka, spock — sequential. Each sign is just a different activation table across the same 22 joints and 44 cords.</p><p>The transition timing is fixed by the choreography; in a real robot it would be collision-checked.</p>`,
+  `<p><b>05 — Every actuator.</b> All 44 cords and 22 joints sweep across their range. The forearm roll adds a global degree of freedom.</p><p>Use this study to check for cable-cable interference and to confirm each spool pays out and takes up correctly.</p>`
+];
+
+let currentStudy = 0;
+let time = 0;
+let paused = false;
+let totalTime = studyDurations[0];
+
+function setStudy(i){
+  currentStudy = clamp(i,0,4);
+  totalTime = studyDurations[currentStudy];
+  time = 0;
+  document.querySelectorAll('.study').forEach((el,idx)=>el.classList.toggle('active',idx===currentStudy));
+  document.getElementById('notes').innerHTML = studyNotes[currentStudy];
+}
+
+function update(){
+  sampleStudy(currentStudy, time);
+  applyAngles();
+  root.updateMatrixWorld(true);
+  updateTendons();
+  skelLines.forEach((line,fi)=>{
+    const f=FINGERS[fi]; const pts=[];
+    pts.push(digits[f].anchor.position.clone());
+    let z=0; digits[f].joints.forEach(j => { z-=j.len; pts.push(new THREE.Vector3(0,0,z)); });
+    line.geometry.setFromPoints(pts);
+  });
+
+  document.getElementById('frame').textContent = Math.floor(time*60);
+  document.getElementById('tread').textContent = time.toFixed(2);
+  document.getElementById('time').textContent = `${time.toFixed(2)} / ${totalTime.toFixed(2)}`;
+  document.getElementById('scrub').value = clamp(time/totalTime,0,1)*1000;
+  ['index-mcp','index-pip','middle-mcp','middle-pip','thumb-cmc','thumb-mcp'].forEach(id => {
+    const [f,j] = id.split('-');
+    const el = document.getElementById('r-'+id);
+    if(el) el.textContent = Math.round(state.angles[f][j]||0)+'°';
+  });
+  // EMG bars
+  FINGERS.forEach(f => {
+    const bar = document.getElementById('emg-'+f);
+    if(bar) bar.style.width = Math.round(state.emg[f].flex*100)+'%';
+  });
+}
+
+let last = performance.now();
+function animate(now){
+  const dt = Math.min(0.05,(now-last)/1000); last=now;
+  if(!paused){
+    time += dt;
+    if(time > totalTime){ time = totalTime; paused=true; document.getElementById('play').textContent='Play'; }
+  }
+  update();
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+
+// UI wiring
+const playBtn = document.getElementById('play');
+playBtn.addEventListener('click',()=>{ paused=!paused; playBtn.textContent = paused?'Play':'Pause'; if(time>=totalTime){time=0;paused=false;playBtn.textContent='Pause';} });
+document.getElementById('restart').addEventListener('click',()=>{ time=0; paused=false; playBtn.textContent='Pause'; });
+document.getElementById('prev').addEventListener('click',()=>setStudy(currentStudy-1));
+document.getElementById('next').addEventListener('click',()=>setStudy(currentStudy+1));
+document.getElementById('scrub').addEventListener('input', e=>{ time = parseInt(e.target.value)/1000*totalTime; paused=true; playBtn.textContent='Play'; });
+document.querySelectorAll('.study').forEach(el => el.addEventListener('click',()=>setStudy(parseInt(el.dataset.s))));
+
+['links','cords','pulleys','actuators','skeleton'].forEach(id=>{
+  document.getElementById('v-'+id).addEventListener('change', e=>{
+    const on = e.target.checked;
+    if(id==='links') links.forEach(m=>m.visible=on);
+    if(id==='cords') tendons.forEach(t=>t.line.visible=on);
+    if(id==='pulleys') pulleys.forEach(m=>m.visible=on);
+    if(id==='actuators') actuators.forEach(m=>m.visible=on);
+    if(id==='skeleton') skelLines.forEach(m=>m.visible=on);
+  });
+});
+
+const explodeSlider = document.getElementById('explode');
+const explodeVal = document.getElementById('explodeVal');
+explodeSlider.addEventListener('input', ()=>{
+  const p = parseInt(explodeSlider.value)/100;
+  explodeVal.textContent = explodeSlider.value+'%';
+  FINGERS.forEach(f => {
+    digits[f].anchor.position.set(BASES[f][0], BASES[f][1], BASES[f][2] + p*3);
+    digits[f].joints.forEach((j,i) => {
+      j.pivot.position.set(0,0, (i===0?0:-SEG_LEN[f][i-1]) - p*1.2);
+    });
+  });
+});
+
+window.addEventListener('keydown', e=>{
+  if(e.code==='Space'){ e.preventDefault(); paused=!paused; playBtn.textContent=paused?'Play':'Pause'; }
+  if(e.code==='ArrowLeft') setStudy(currentStudy-1);
+  if(e.code==='ArrowRight') setStudy(currentStudy+1);
+  if(e.code==='KeyR'){ time=0; paused=false; playBtn.textContent='Pause'; }
+});
+
+function resize(){
+  const rect = document.getElementById('scene').getBoundingClientRect();
+  renderer.setSize(rect.width, rect.height);
+  camera.aspect = rect.width/rect.height;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+// EMG panel
+const emgDiv = document.getElementById('emg');
+FINGERS.forEach(f => {
+  const row = document.createElement('div');
+  row.className='emg';
+  row.innerHTML = `<div style="font-size:10px;color:var(--dim);display:flex;justify-content:space-between;margin-bottom:3px;"><span>${f}</span><span id="emg-t-${f}">0%</span></div><div class="bar"><div class="fill" id="emg-${f}"></div></div>`;
+  emgDiv.appendChild(row);
+});
+
+// URL deep-link
+const params = new URLSearchParams(location.search);
+if(params.has('study')) setStudy(parseInt(params.get('study'))-1);
+if(params.has('t')){ time = parseFloat(params.get('t')); time = clamp(time,0,totalTime); }
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const card = document.getElementById('infocard');
+const cardTitle = document.getElementById('card-title');
+const cardBody = document.getElementById('card-body');
+renderer.domElement.addEventListener('pointermove', e=>{
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left)/rect.width)*2 - 1;
+  mouse.y = -((e.clientY - rect.top)/rect.height)*2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const clickable = [...pivots, ...pulleys, ...screws, ...links, ...actuators.map(g => g), ...tendons.map(t => t.line)];
+  const hit = raycaster.intersectObjects(clickable, true)[0];
+  if(hit){
+    let obj = hit.object;
+    while(obj && !obj.userData?.name) obj = obj.parent;
+    if(obj && obj.userData?.name){
+      cardTitle.textContent = obj.userData.name;
+      cardBody.textContent = obj.userData.desc;
+      card.style.display = 'block';
+      card.style.left = Math.min(e.clientX - rect.left + 14, rect.width - 230) + 'px';
+      card.style.top = Math.min(e.clientY - rect.top + 14, rect.height - 120) + 'px';
+      return;
+    }
+  }
+  card.style.display = 'none';
+});
+
+// initial render done below after wiring
+applyAngles();
+updateTendons();
+document.getElementById('loading').style.display='none';
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

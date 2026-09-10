@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tendon Hand — Replicanta Effector</title>
+<style>
+  :root { --ink:#e8e2d6; --dim:#8a8577; --panel:#14161aab; --line:#ffffff16; --accent:#d8a24a;
+          --ok:#6fae7f; --strain:#c96b4a; --bg:#0b0d10; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; overflow:hidden; background:var(--bg);
+    font:13px/1.45 "SF Mono","Cascadia Code",Consolas,monospace; color:var(--ink); }
+  #scene { position:fixed; inset:0; }
+  .panel { position:fixed; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; backdrop-filter:blur(10px); padding:12px 14px; }
+  #hud { top:14px; left:14px; width:258px; }
+  #hud h1 { font-size:12px; letter-spacing:2px; margin:0 0 8px; color:var(--ink); font-weight:600; }
+  #hud h1 em { color:var(--accent); font-style:normal; }
+  #conn { font-size:10px; letter-spacing:1px; color:#b06a5a; }
+  #conn.on { color:var(--ok); }
+  #mind { margin-top:8px; padding-top:8px; border-top:1px dashed var(--line); font-size:11px; color:var(--dim); }
+  #mind b { color:var(--ink); font-weight:600; }
+  #goalTag { color:var(--accent); }
+  #telemetry { top:14px; right:14px; width:250px; font-size:11px; }
+  #telemetry h2, #sliders h2 { font-size:10px; letter-spacing:2px; margin:0 0 8px; color:var(--dim); font-weight:600; }
+  .frow { display:grid; grid-template-columns:52px 1fr 38px; gap:6px; align-items:center; margin:3px 0; }
+  .frow span:last-child { text-align:right; color:var(--dim); }
+  .tbar { height:5px; background:#ffffff10; border-radius:3px; overflow:hidden; position:relative; }
+  .tbar i { position:absolute; inset:0 100% 0 0; background:var(--ok); border-radius:3px; transition:inset-inline-end .12s linear; }
+  .tbar i.hot { background:var(--strain); }
+  #sliders { bottom:14px; left:14px; width:238px; }
+  .srow { display:grid; grid-template-columns:58px 1fr; gap:8px; align-items:center; margin:5px 0; }
+  .srow label { color:var(--dim); font-size:11px; }
+  input[type=range] { width:100%; accent-color:var(--accent); height:14px; }
+  #goals { bottom:14px; right:14px; display:flex; gap:6px; padding:10px; }
+  #goals button { background:#ffffff10; color:var(--ink); border:1px solid var(--line);
+    border-radius:6px; padding:6px 10px; font:inherit; font-size:11px; cursor:pointer; }
+  #goals button:hover { background:var(--accent); color:#161310; border-color:var(--accent); }
+  #legend { bottom:14px; left:50%; transform:translateX(-50%); font-size:10px; color:var(--dim);
+    padding:6px 12px; white-space:nowrap; }
+  #legend i { color:var(--accent); }
+  @media (max-width:900px){ #telemetry{display:none} }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div class="panel" id="hud">
+  <h1>TENDON <em>HAND</em></h1>
+  <div id="conn">● offline — direct drive</div>
+  <div id="mind"></div>
+</div>
+
+<div class="panel" id="telemetry">
+  <h2>TENDON TELEMETRY</h2>
+  <div id="trows"></div>
+</div>
+
+<div class="panel" id="sliders">
+  <h2>MANUAL DRIVE</h2>
+  <div id="srows"></div>
+  <div class="srow"><label>spread</label><input data-k="spread" type="range" min="0" max="1" step=".01" value="0.12"></div>
+  <div class="srow"><label>opposition</label><input data-k="opp" type="range" min="0" max="1" step=".01" value="0.1"></div>
+  <div class="srow"><label>wrist pitch</label><input data-k="pitch" type="range" min="-1" max="1" step=".01" value="0"></div>
+  <div class="srow"><label>wrist yaw</label><input data-k="yaw" type="range" min="-1" max="1" step=".01" value="0"></div>
+</div>
+
+<div class="panel" id="goals">
+  <button data-g="reach">reach</button>
+  <button data-g="grasp">grasp</button>
+  <button data-g="release">release</button>
+  <button data-g="point">point</button>
+  <button data-g="wave">wave</button>
+  <button data-g="fist">fist</button>
+</div>
+
+<div class="panel" id="legend">drag sliders / goals — or let <i>replicanta</i> drive · red strands = flexor tendons · pale = extensor · glow = strain on contact</div>
+
+<script src="/three.min.js"></script>
+<script src="/viewer.js"></script>
+</body>
+</html>

@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tendon Hand — Kinematic Study</title>
+<style>
+  :root{
+    --bg:#0c0d10; --panel:#131519; --panel-2:#1a1d23; --ink:#e3dfd6; --dim:#7e7971;
+    --accent:#6cb6ff; --ok:#57a773; --warn:#c96b4a;
+    --red:#e9575c; --blue:#4f8fea; --yellow:#eac447; --green:#6ab889; --purple:#a27de3;
+    --line:#ffffff10;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 "SF Mono","Cascadia Code",Consolas,monospace;overflow:hidden;}
+  #app{display:grid;grid-template-columns:230px 1fr 300px;grid-template-rows:1fr 68px;height:100%;}
+  #scene{grid-column:2;grid-row:1;position:relative;background:radial-gradient(circle at 50% 30%,#12141a 0%,#090a0c 70%);}
+  canvas{display:block;width:100%;height:100%;}
+  .sidebar{padding:16px;overflow:auto;border-right:1px solid var(--line);background:var(--panel);}
+  .sidebar h2{font-size:10px;letter-spacing:1.8px;text-transform:uppercase;color:var(--dim);margin:0 0 12px;}
+  .stat{font-size:12px;margin:9px 0;display:flex;justify-content:space-between;}
+  .stat b{color:var(--accent);}
+  .card{background:var(--panel-2);border:1px solid var(--line);border-radius:7px;padding:12px;margin:14px 0;}
+  .card h3{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);margin:0 0 10px;}
+  .diff{font-family:monospace;font-size:11px;color:var(--ok);}
+  .right{grid-column:3;grid-row:1;padding:18px;overflow:auto;border-left:1px solid var(--line);background:var(--panel);}
+  .right h1{font-size:20px;margin:0 0 4px;letter-spacing:-0.5px;}
+  .right .subtitle{color:var(--dim);font-size:11px;margin-bottom:20px;}
+  .section{margin:20px 0;}
+  .section h3{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);margin:0 0 10px;}
+  .study{cursor:pointer;padding:9px 11px;border:1px solid var(--line);border-radius:6px;margin:7px 0;transition:.12s;background:var(--panel-2);}
+  .study:hover{border-color:var(--accent);}
+  .study.active{border-color:var(--accent);background:linear-gradient(90deg,#182231,#1a2331);}
+  .study .n{display:inline-block;width:22px;color:var(--accent);font-weight:700;}
+  .study small{display:block;color:var(--dim);font-size:10px;margin-top:3px;}
+  .notes{font-size:11px;line-height:1.6;color:#c3bdb2;}
+  .notes p{margin:0 0 9px;}
+  .readout{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;font-size:10px;}
+  .readout div{background:var(--panel-2);padding:7px;border-radius:4px;}
+  .readout span{display:block;color:var(--dim);font-size:9px;}
+  .emg .bar{height:4px;background:#2a2e35;border-radius:2px;margin-top:5px;overflow:hidden;}
+  .emg .fill{height:100%;width:0%;background:var(--accent);transition:width .1s linear;}
+  .toggle{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:11px;}
+  .slider{margin:10px 0;}
+  .slider label{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-bottom:4px;}
+  .slider input{width:100%;}
+  .playback{grid-column:1/-1;grid-row:2;border-top:1px solid var(--line);background:var(--panel);display:flex;align-items:center;gap:12px;padding:0 18px;}
+  .playback button{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);border-radius:4px;padding:7px 14px;cursor:pointer;font-family:inherit;font-size:12px;}
+  .playback button:hover{border-color:var(--accent);}
+  .playback input[type=range]{flex:1;}
+  .time{font-size:11px;color:var(--dim);min-width:110px;text-align:right;}
+  .corner{position:absolute;pointer-events:none;font-size:10px;color:var(--dim);text-shadow:0 1px 3px #000;}
+  #tl{top:14px;left:16px;}
+  #br{bottom:14px;right:16px;text-align:right;}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:10px;margin-top:10px;}
+  .legend i{display:inline-block;width:12px;height:3px;margin-right:4px;vertical-align:middle;}
+  #loading{position:absolute;inset:0;display:grid;place-items:center;background:var(--bg);z-index:10;}
+  .loader{font-size:12px;letter-spacing:2px;color:var(--accent);animation:blink 1.2s infinite;}
+  @keyframes blink{0%,100%{opacity:1;}50%{opacity:.4;}}
+  .badge{display:inline-block;font-size:9px;background:#1f2b3d;color:var(--accent);border:1px solid #2b3c55;border-radius:3px;padding:1px 5px;margin-left:6px;}
+  .infocard{position:absolute;background:rgba(10,12,16,0.92);border:1px solid var(--line);border-radius:6px;padding:12px;max-width:220px;box-shadow:0 8px 24px rgba(0,0,0,0.4);backdrop-filter:blur(6px);pointer-events:none;z-index:20;}
+  .infocard .pinhint{font-size:9px;color:var(--dim);margin-top:8px;}
+</style>
+<script type="importmap">
+  {"imports": {"three": "./bridge/vendor/three.module.js", "three/addons/": "./bridge/vendor/"}}
+</script>
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <h2>Project</h2>
+    <div class="card">
+      <h3>Stats</h3>
+      <div class="stat">Model lines <b>4,216</b></div>
+      <div class="stat">Files <b>8</b></div>
+      <div class="stat">STEP exports <b>18</b></div>
+      <div class="stat">Assembly size <b>14.7 MB</b></div>
+      <div class="stat">Cords <b>38</b></div>
+      <div class="stat">Joints <b>19</b></div>
+      <div style="font-size:9px;color:var(--dim);margin-top:8px;">Counts include historical revisions.</div>
+    </div>
+    <div class="card">
+      <h3>Web preview</h3>
+      <div style="font-size:11px;color:var(--ok);">● live at 127.0.0.1:8765</div>
+    </div>
+    <div class="card">
+      <h3>Latest diff</h3>
+      <div class="diff">Edited 3 files +42 −11</div>
+      <div style="margin-top:10px;display:flex;gap:6px;">
+        <button style="flex:1;background:#252a31;border:1px solid var(--line);color:var(--dim);border-radius:4px;padding:5px;font-size:10px;cursor:pointer;">Undo</button>
+        <button style="flex:1;background:#252a31;border:1px solid var(--line);color:var(--dim);border-radius:4px;padding:5px;font-size:10px;cursor:pointer;">Review</button>
+      </div>
+    </div>
+  </aside>
+
+  <main id="scene">
+    <div id="loading"><div class="loader">ASSEMBLING TENDON HAND...</div></div>
+    <pre id="errlog" style="display:none;position:absolute;top:10px;left:10px;background:rgba(180,40,40,0.85);color:#fff;padding:10px;max-width:90%;white-space:pre-wrap;z-index:30;font-size:10px;"></pre>
+    <div class="corner" id="tl">Right hand / Human scale<br>frame <span id="frame">0</span> · t=<span id="tread">0.00</span>s</div>
+    <div class="corner" id="br">Scene details ▾<br><span id="detail">38 cords · 19 joints · 5 studies</span></div>
+  </main>
+
+  <aside class="right">
+    <h1>Tendon hand.</h1>
+    <div class="subtitle">An open-frame hand. Follow the cords from the forearm to the fingertips.</div>
+
+    <div class="section">
+      <h3>Movement Library — 05 studies</h3>
+      <div class="study active" data-s="0"><span class="n">01</span> Make a fist<small>Four fingers close, thumb opposes last.</small></div>
+      <div class="study" data-s="1"><span class="n">02</span> Ripple<small>Same hardware, different timing. The roll is software.</small></div>
+      <div class="study" data-s="2"><span class="n">03</span> Pinch<small>Thumb and index meet in space.</small></div>
+      <div class="study" data-s="3"><span class="n">04</span> Hand signs<small>Peace, metal, shaka, spock — sequential.</small></div>
+      <div class="study" data-s="4"><span class="n">05</span> Every actuator<small>All 38 cords sweep across full range.</small></div>
+    </div>
+
+    <div class="section">
+      <h3>Inside the movement</h3>
+      <div class="notes" id="notes">
+        <p><b>01 — Fist.</b> The flexor cords shorten on their spools. Distal joints close last because they have smaller moment arms and less mechanical advantage.</p>
+        <p>Watch the thumb: it waits until the fingers are nearly closed before opposing, the way a real hand avoids self-collision.</p>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Joint readout</h3>
+      <div class="readout" id="readout">
+        <div><span>index mcp</span><b id="r-index-mcp">0°</b></div>
+        <div><span>index pip</span><b id="r-index-pip">0°</b></div>
+        <div><span>middle mcp</span><b id="r-middle-mcp">0°</b></div>
+        <div><span>middle pip</span><b id="r-middle-pip">0°</b></div>
+        <div><span>thumb cmc</span><b id="r-thumb-cmc">0°</b></div>
+        <div><span>thumb mcp</span><b id="r-thumb-mcp">0°</b></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Nervous drive <span class="badge">EMG</span></h3>
+      <div id="emg"></div>
+    </div>
+
+    <div class="section">
+      <h3>View &amp; visibility</h3>
+      <div class="toggle"><label>Live bridge</label><input type="checkbox" id="v-live" checked></div>
+      <div class="toggle"><label>Links</label><input type="checkbox" id="v-links" checked></div>
+      <div class="toggle"><label>Cords</label><input type="checkbox" id="v-cords" checked></div>
+      <div class="toggle"><label>Pulleys</label><input type="checkbox" id="v-pulleys" checked></div>
+      <div class="toggle"><label>Actuators</label><input type="checkbox" id="v-actuators" checked></div>
+      <div class="toggle"><label>Skeleton overlay</label><input type="checkbox" id="v-skeleton"></div>
+      <div class="toggle"><label>Nerve pulses</label><input type="checkbox" id="v-pulses" checked></div>
+      <div class="slider"><label><span>Exploded view</span><span id="explodeVal">0%</span></label><input type="range" id="explode" min="0" max="100" value="0"></div>
+      <div class="legend">
+        <div><i style="background:var(--red)"></i>index</div>
+        <div><i style="background:var(--blue)"></i>middle</div>
+        <div><i style="background:var(--yellow)"></i>ring</div>
+        <div><i style="background:var(--green)"></i>pinky</div>
+        <div><i style="background:var(--purple)"></i>thumb</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Hand placement</h3>
+      <div class="slider"><label><span>Position X</span><span id="pxVal">0.0</span></label><input type="range" id="px" min="-8" max="8" step="0.1"></div>
+      <div class="slider"><label><span>Position Y</span><span id="pyVal">0.0</span></label><input type="range" id="py" min="-4" max="6" step="0.1"></div>
+      <div class="slider"><label><span>Position Z</span><span id="pzVal">0.0</span></label><input type="range" id="pz" min="-8" max="8" step="0.1"></div>
+      <div class="slider"><label><span>Yaw</span><span id="yawVal">0°</span></label><input type="range" id="yaw" min="-180" max="180" step="1"></div>
+      <div class="slider"><label><span>Pitch</span><span id="pitchVal">0°</span></label><input type="range" id="pitch" min="-180" max="180" step="1"></div>
+      <div class="slider"><label><span>Roll (180° = palm up)</span><span id="rollVal">180°</span></label><input type="range" id="roll" min="-180" max="180" step="1"></div>
+      <button id="resetPlacement" style="width:100%;background:#252a31;border:1px solid var(--line);color:var(--dim);border-radius:4px;padding:6px;font-size:10px;cursor:pointer;margin-top:4px;">Reset placement</button>
+    </div>
+  </aside>
+
+  <div id="infocard" class="infocard" style="display:none;">
+    <div id="card-title" style="font-weight:700;font-size:13px;margin-bottom:6px;"></div>
+    <div id="card-body" style="font-size:11px;line-height:1.5;color:#c3bdb2;"></div>
+    <div class="pinhint">click a part to pin / unpin this card</div>
+  </div>
+
+  <div class="playback">
+    <button id="prev">←</button>
+    <button id="play">Pause</button>
+    <button id="next">→</button>
+    <button id="restart">R</button>
+    <input type="range" id="scrub" min="0" max="1000" value="0">
+    <div class="time" id="time">00.00 / 08.00</div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from './bridge/vendor/OrbitControls.js';
+
+window.addEventListener('error', e=>{
+  const el = document.getElementById('errlog');
+  if(el){ el.style.display='block'; el.textContent += 'ERROR: '+e.message+' at '+e.filename+':'+e.lineno+'\n'; }
+});
+window.addEventListener('unhandledrejection', e=>{
+  const el = document.getElementById('errlog');
+  if(el){ el.style.display='block'; el.textContent += 'PROMISE: '+e.reason+'\n'; }
+});
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0b0d);
+scene.fog = new THREE.Fog(0x0a0b0d, 45, 100);
+
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 250);
+camera.position.set(-6, 4, -21);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.25;
+document.getElementById('scene').appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 8;
+controls.maxDistance = 80;
+controls.target.set(0, 0.2, -6);
+
+scene.add(new THREE.HemisphereLight(0xdce4ea, 0x151920, 0.45));
+const key = new THREE.DirectionalLight(0xfff6eb, 1.9);
+key.position.set(14, 28, -8);
+key.castShadow = true;
+key.shadow.mapSize.set(2048,2048);
+key.shadow.camera.left=-22; key.shadow.camera.right=22; key.shadow.camera.top=22; key.shadow.camera.bottom=-22;
+key.shadow.bias=-0.0004;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x8fb6ff, 1.0);
+rim.position.set(-18, 10, -18);
+scene.add(rim);
+const fill = new THREE.PointLight(0xffecd1, 16, 48, 2);
+fill.position.set(4, 8, -12);
+scene.add(fill);
+
+// Procedural studio environment — this is what makes the steel read as
+// polished stainless instead of flat black. Metalness without an env map
+// has nothing to reflect, so every metal part collapses to near-black.
+{
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+  const room = new THREE.Mesh(
+    new THREE.BoxGeometry(80, 50, 80),
+    new THREE.MeshBasicMaterial({ color: 0x14181f, side: THREE.BackSide })
+  );
+  envScene.add(room);
+  const softbox = (w, h, color, gain, pos, rot = [0, 0, 0]) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial());
+    m.material.color.setHex(color).multiplyScalar(gain);
+    m.position.set(...pos); m.rotation.set(...rot);
+    envScene.add(m);
+  };
+  softbox(30, 14, 0xfff1de, 7.0, [0, 22, -4], [Math.PI / 2, 0, 0]);      // warm key overhead
+  softbox(18, 9, 0xcfe2ff, 4.0, [-30, 10, -12], [0, Math.PI / 2.3, 0]);  // cool side strip
+  softbox(16, 8, 0xffe2c0, 3.0, [28, 7, 10], [0, -Math.PI / 2.2, 0]);    // warm side strip
+  softbox(40, 8, 0xaab6c8, 1.4, [0, -16, -26], [-Math.PI / 3, 0, 0]);    // floor bounce
+  scene.environment = pmrem.fromScene(envScene, 0.08).texture;
+  pmrem.dispose();
+}
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(140,140), new THREE.MeshStandardMaterial({color:0x14171c,roughness:0.85,metalness:0.1}));
+ground.rotation.x=-Math.PI/2; ground.position.y=-4.2; ground.receiveShadow=true; scene.add(ground);
+const grid = new THREE.GridHelper(90,90,0x2a2e35,0x1a1d22); grid.position.y=-4.18; scene.add(grid);
+
+const COLORS = { index:0xe9575c, middle:0x4f8fea, ring:0xeac447, pinky:0x6ab889, thumb:0xa27de3 };
+const FINGERS = ['index','middle','ring','pinky','thumb'];
+const JOINTS = {
+  index:  ['cmc','mcp','pip','dip'],
+  middle: ['cmc','mcp','pip','dip'],
+  ring:   ['cmc','mcp','pip','dip'],
+  pinky:  ['cmc','mcp','pip','dip'],
+  thumb:  ['cmc','mcp','ip']
+};
+const SEG_LEN = {
+  index:  [3.6, 2.4, 1.8, 1.35],
+  middle: [3.9, 2.6, 2.0, 1.5],
+  ring:   [3.7, 2.4, 1.8, 1.35],
+  pinky:  [3.0, 1.9, 1.4, 1.05],
+  thumb:  [2.2, 2.0, 1.6]
+};
+// Right hand, palm down (-y), fingers toward the camera (-z). Viewed from the
+// fingertip side, a right hand's thumb sits on the viewer's RIGHT — so the
+// thumb/index side is -x and the pinky side is +x.
+const SPREAD_BASE = { index:9, middle:0, ring:-9, pinky:-20, thumb:52 };
+const BASES = {
+  index:  [-2.0, 0, -3.0],
+  middle: [-0.7, 0, -3.6],
+  ring:   [0.7, 0, -3.3],
+  pinky:  [1.8, 0, -2.6],
+  thumb:  [-3.25, -0.35, -1.7]
+};
+const D2R = Math.PI/180;
+
+// The whole assembly lives under `mount` so the user can reposition/rotate
+// the hand freely while wrist/forearm animation keeps working on `root`.
+// Default placement rolls the hand 180°: palm faces up. User tweaks persist
+// in localStorage.
+const mount = new THREE.Group();
+scene.add(mount);
+const root = new THREE.Group();
+mount.add(root);
+
+const PLACEMENT_KEY = 'handPlacement.v1';
+const DEFAULT_PLACEMENT = {px:0, py:0, pz:0, yaw:0, pitch:0, roll:180};
+function loadPlacement(){
+  try{
+    const saved = JSON.parse(localStorage.getItem(PLACEMENT_KEY) || 'null');
+    if(saved && typeof saved === 'object') return {...DEFAULT_PLACEMENT, ...saved};
+  }catch(e){ /* corrupt storage -> defaults */ }
+  return {...DEFAULT_PLACEMENT};
+}
+const placement = loadPlacement();
+function applyPlacement(){
+  mount.position.set(placement.px, placement.py, placement.pz);
+  mount.rotation.set(placement.pitch*D2R, placement.yaw*D2R, placement.roll*D2R);
+}
+applyPlacement();
+
+// Stainless steel family — brushed for structure, polished for bearing surfaces.
+const steelMat     = new THREE.MeshStandardMaterial({color:0xd4d9df, roughness:0.30, metalness:1.0});
+const brushedSteel = new THREE.MeshStandardMaterial({color:0xc9ced5, roughness:0.42, metalness:1.0});
+const polishedSteel= new THREE.MeshStandardMaterial({color:0xe8ecf1, roughness:0.13, metalness:1.0});
+const machinedSteel= new THREE.MeshStandardMaterial({color:0xb4bac2, roughness:0.35, metalness:1.0});
+const anodMat = {
+  index: new THREE.MeshStandardMaterial({color:0xe9575c,roughness:0.38,metalness:0.6}),
+  middle:new THREE.MeshStandardMaterial({color:0x4f8fea,roughness:0.38,metalness:0.6}),
+  ring:  new THREE.MeshStandardMaterial({color:0xeac447,roughness:0.38,metalness:0.6}),
+  pinky: new THREE.MeshStandardMaterial({color:0x6ab889,roughness:0.38,metalness:0.6}),
+  thumb: new THREE.MeshStandardMaterial({color:0xa27de3,roughness:0.38,metalness:0.6})
+};
+
+// Open-frame metacarpal bridge (thin bars, no central block)
+function metacarpalBar(a, b, thick=0.10){
+  const len = a.distanceTo(b);
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(thick, thick, len, 12), brushedSteel);
+  m.position.copy(a).lerp(b, 0.5);
+  m.lookAt(b);
+  m.rotateX(Math.PI/2);
+  m.castShadow=true; m.receiveShadow=true;
+  m.userData = {part:'frame', name:'Metacarpal frame bar', desc:'Brushed stainless frame bar. Carries the knuckle bearing blocks and keeps the palm open.'};
+  root.add(m);
+}
+// longitudinal bars
+const mcY = 0.15;
+for(let z of [-2.4, -3.9]){
+  metacarpalBar(new THREE.Vector3(-2.5, mcY, z), new THREE.Vector3(2.3, mcY, z), 0.10);
+}
+// cross bars connecting knuckle bases
+const knuckles = ['index','middle','ring','pinky'].map(f => new THREE.Vector3(...BASES[f]));
+knuckles.forEach(k => metacarpalBar(new THREE.Vector3(k.x, mcY, -2.4), new THREE.Vector3(k.x, mcY, -3.9), 0.08));
+// thumb CMC saddle: angled steel block on the radial edge of the frame
+const thumbSaddle = new THREE.Mesh(new THREE.BoxGeometry(0.62,0.34,0.95), steelMat);
+thumbSaddle.position.set(-2.9, -0.12, -1.95);
+thumbSaddle.rotation.y = THREE.MathUtils.degToRad(SPREAD_BASE.thumb);
+thumbSaddle.castShadow=true; root.add(thumbSaddle);
+thumbSaddle.userData = {part:'saddle', name:'Thumb CMC saddle', desc:'Stainless carpometacarpal saddle block on the radial edge of the palm. The thumb metacarpal originates here — lateral to the palm, never under it.'};
+// saddle struts tying into the palm frame
+metacarpalBar(new THREE.Vector3(-2.9, -0.05, -1.95), new THREE.Vector3(-2.45, mcY, -2.4), 0.09);
+metacarpalBar(new THREE.Vector3(-2.9, -0.05, -1.95), new THREE.Vector3(-1.7, mcY, -0.9), 0.09);
+
+// Prosthetic forearm sleeve (human-scale context, translucent so the actuators show through)
+const sleeve = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.55, 1.35, 10, 32, 1, true),
+  new THREE.MeshStandardMaterial({color:0xc9ced5,roughness:0.45,metalness:0.9,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false})
+);
+sleeve.rotation.x = Math.PI/2; sleeve.position.set(0, 0.45, 10.2); sleeve.castShadow=false; root.add(sleeve);
+// sleeve seam rings
+const sleeveRing = new THREE.Mesh(new THREE.TorusGeometry(1.55, 0.05, 8, 40), machinedSteel);
+sleeveRing.position.set(0,0.45,5.2); root.add(sleeveRing);
+const sleeveRing2 = sleeveRing.clone(); sleeveRing2.position.set(0,0.45,15.2); root.add(sleeveRing2);
+const cuff = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 2.2, 32, 1, true), new THREE.MeshStandardMaterial({color:0xd4d9df,roughness:0.40,metalness:0.95,transparent:true,opacity:0.28,side:THREE.DoubleSide,depthWrite:false}));
+cuff.rotation.x = Math.PI/2; cuff.position.set(0, 0.45, 4.0); cuff.castShadow=true; root.add(cuff);
+cuff.userData = {part:'cuff', name:'Forearm cuff', desc:'Stainless forearm shroud. Houses the actuator rails and the tendon bundle.'};
+// cuff end rings
+const cuffRing = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.08, 10, 40), machinedSteel);
+cuffRing.position.set(0,0.45,2.9); root.add(cuffRing);
+const cuffRing2 = cuffRing.clone(); cuffRing2.position.set(0,0.45,5.1); root.add(cuffRing2);
+
+// actuator mounting rails inside the cuff — extensor row on the dorsal side,
+// flexor row on the palmar side
+const railTop = new THREE.Mesh(new THREE.BoxGeometry(2.8,0.14,4.2), brushedSteel);
+railTop.position.set(0, 1.08, 4.0); root.add(railTop);
+railTop.userData = {part:'rail', name:'Extensor actuator rail', desc:'Dorsal mounting rail. Every extensor spool bolts to it.'};
+const railBottom = new THREE.Mesh(new THREE.BoxGeometry(2.8,0.14,4.2), brushedSteel);
+railBottom.position.set(0, -0.42, 4.0); root.add(railBottom);
+railBottom.userData = {part:'rail', name:'Flexor actuator rail', desc:'Palmar mounting rail. Every flexor spool bolts to it, slung under the forearm like the real flexor mass.'};
+
+// carpal conduit ring — the whole tendon bundle passes through it at the wrist
+const carpalRing = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.07, 10, 40), polishedSteel);
+carpalRing.position.set(0, 0.45, 1.6); root.add(carpalRing);
+carpalRing.userData = {part:'conduit', name:'Carpal conduit ring', desc:'Wrist guide ring. All 38 cords pass through it, the machine equivalent of the carpal tunnel.'};
+
+const digits = {};
+const pulleys = [], pivots = [], actuators = [], tendons = [], links = [], screws = [];
+
+// Helper geometry caches
+const capGeo = new THREE.CylinderGeometry(0.26,0.26,0.12,20);
+const screwGeo = new THREE.CylinderGeometry(0.06,0.06,0.22,8);
+
+FINGERS.forEach(f => {
+  const isThumb = f === 'thumb';
+  const anchor = new THREE.Group();
+  anchor.position.set(...BASES[f]);
+  root.add(anchor);
+  if(isThumb){
+    // Thumb extends outward (radial side) and forward, slightly below the
+    // palm plane — a natural resting right-hand thumb, never folded back
+    // across the top of the hand.
+    anchor.rotation.x = -0.16;
+  }
+  const joints = [];
+  let parent = anchor;
+  const lenArr = SEG_LEN[f];
+  for(let i=0;i<lenArr.length;i++){
+    const isBase = i===0;
+    const len = lenArr[i];
+    const jn = JOINTS[f][i];
+    const pivot = new THREE.Group();
+    pivot.position.set(0, 0, isBase ? 0 : -lenArr[i-1]);
+    parent.add(pivot);
+
+    // joint hub: realistic bearing housing (not a plain sphere).
+    // Fingers hinge about the lateral (x) axis; the thumb hinges about the
+    // vertical (y) axis so it folds across the palm instead of over it.
+    const hubGroup = new THREE.Group();
+    const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.38,24), polishedSteel);
+    if(!isThumb) housing.rotation.z = Math.PI/2;
+    housing.castShadow=true; hubGroup.add(housing);
+    const flangeGeo = new THREE.CylinderGeometry(0.30,0.30,0.04,24);
+    const flangeL = new THREE.Mesh(flangeGeo, polishedSteel);
+    const flangeR = new THREE.Mesh(flangeGeo, polishedSteel);
+    if(isThumb){
+      flangeL.position.y = 0.18; flangeR.position.y = -0.18;
+    } else {
+      flangeL.rotation.z = Math.PI/2; flangeL.position.x = 0.18;
+      flangeR.rotation.z = Math.PI/2; flangeR.position.x = -0.18;
+    }
+    hubGroup.add(flangeL); hubGroup.add(flangeR);
+    const groove = new THREE.Mesh(new THREE.TorusGeometry(0.24,0.03,12,24), machinedSteel);
+    if(isThumb) groove.rotation.x = Math.PI/2; else groove.rotation.y = Math.PI/2;
+    hubGroup.add(groove);
+    pivot.add(hubGroup); pivots.push(hubGroup);
+    hubGroup.userData = {part:'joint hub', name:`${f} ${jn.toUpperCase()} hub`, desc:'Polished stainless bearing housing with retention flanges and a tendon groove. Joint '+(i+1)+' of '+f+'.'};
+    // side caps (thumb caps sit top/bottom — its hinge pin is vertical)
+    const capL = new THREE.Mesh(capGeo, machinedSteel);
+    const capR = new THREE.Mesh(capGeo, machinedSteel);
+    if(isThumb){
+      capL.position.set(0,0.26,0); capR.position.set(0,-0.26,0);
+    } else {
+      capL.rotation.x=Math.PI/2; capL.position.set(0.26,0,0);
+      capR.rotation.x=Math.PI/2; capR.position.set(-0.26,0,0);
+    }
+    pivot.add(capL); pivots.push(capL);
+    capL.userData = {part:'cap', name:`${f} ${jn.toUpperCase()} bearing cap`, desc:'Stainless bearing cap. Captures the pivot pin and seals the joint.'};
+    pivot.add(capR); pivots.push(capR);
+    capR.userData = capL.userData;
+
+    // screw heads
+    const s1 = new THREE.Mesh(screwGeo, polishedSteel);
+    const s2 = new THREE.Mesh(screwGeo, polishedSteel);
+    if(isThumb){
+      s1.position.set(0,0.32,0); s2.position.set(0,-0.32,0);
+    } else {
+      s1.rotation.x=Math.PI/2; s1.position.set(0.32,0,0);
+      s2.rotation.x=Math.PI/2; s2.position.set(-0.32,0,0);
+    }
+    pivot.add(s1); screws.push(s1);
+    s1.userData = {part:'screw', name:`${f} ${jn.toUpperCase()} cap screw`, desc:'Polished stainless SHCS. Retains the bearing cap.'};
+    pivot.add(s2); screws.push(s2);
+    s2.userData = s1.userData;
+
+    // grooved sheaves — flexor on the palm side, extensor on the dorsal side,
+    // INSIDE the frame channel. The thumb flexes horizontally, so its
+    // flexor/extensor sit on the medial/lateral sides instead.
+    const sheaveGeo = new THREE.TorusGeometry(0.13,0.035,10,24);
+    const pulF = new THREE.Mesh(sheaveGeo, polishedSteel);
+    const pulE = new THREE.Mesh(sheaveGeo, polishedSteel);
+    if(isThumb){
+      pulF.rotation.x = Math.PI/2; pulF.position.set(0.13,0,0);
+      pulE.rotation.x = Math.PI/2; pulE.position.set(-0.13,0,0);
+    } else {
+      pulF.rotation.y = Math.PI/2; pulF.position.set(0,-0.13,0);
+      pulE.rotation.y = Math.PI/2; pulE.position.set(0,0.13,0);
+    }
+    pivot.add(pulF); pulleys.push(pulF);
+    pulF.userData = {part:'pulley', name:`${f} ${jn.toUpperCase()} flexor sheave`, desc:'Polished stainless grooved sheave inside the frame channel. Routes the flexor cord along the palm side of the joint.'};
+    pivot.add(pulE); pulleys.push(pulE);
+    pulE.userData = {part:'pulley', name:`${f} ${jn.toUpperCase()} extensor sheave`, desc:'Polished stainless grooved sheave inside the frame channel. Routes the extensor cord along the dorsal side of the joint.'};
+
+    // bone link: open steel frame — the cords run INSIDE it
+    const linkGroup = new THREE.Group();
+    // four corner rails form the finger walls
+    for(const rx of [-0.12, 0.12]) for(const ry of [-0.10, 0.10]){
+      const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.020,len,8), brushedSteel);
+      rail.rotation.x = Math.PI/2;
+      rail.position.set(rx, ry, -len/2);
+      rail.castShadow=true; linkGroup.add(rail);
+    }
+    // cross pins tie the walls together every quarter length
+    const rungCount = Math.max(2, Math.floor(len/0.7));
+    for(let r=1;r<=rungCount;r++){
+      const z = -len * (r/(rungCount+1));
+      for(const ry of [-0.10, 0.10]){
+        const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.016,0.24,6), machinedSteel);
+        pin.rotation.z = Math.PI/2; pin.position.set(0, ry, z); linkGroup.add(pin);
+      }
+    }
+    // dorsal cover plate, ventral cover over the proximal half — the cords
+    // stay visible through the open distal half
+    const dorsal = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.018, len*0.92), steelMat);
+    dorsal.position.set(0, 0.115, -len/2); dorsal.castShadow=true; linkGroup.add(dorsal);
+    const ventral = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.018, len*0.45), steelMat);
+    ventral.position.set(0, -0.115, -len*0.25); ventral.castShadow=true; linkGroup.add(ventral);
+    pivot.add(linkGroup); links.push(linkGroup);
+    linkGroup.userData = {part:'link', name:`${f} ${isBase?'metacarpal':'phalanx'} ${i+1}`, desc:`Brushed stainless open-frame ${isBase?'metacarpal':'phalanx'}. The tendon cords run inside the channel between the frame walls — steel outside, cords inside.`};
+
+    // joint number label floating above the hub
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.width = 64; labelCanvas.height = 64;
+    const ctx = labelCanvas.getContext('2d');
+    ctx.fillStyle = 'rgba(20,24,30,0.78)'; ctx.beginPath(); ctx.arc(32,32,30,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#6cb6ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(32,32,28,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle = '#e3dfd6'; ctx.font = 'bold 26px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(`${i+1}`, 32, 32);
+    const labelTex = new THREE.CanvasTexture(labelCanvas);
+    const labelMat = new THREE.SpriteMaterial({map:labelTex, transparent:true, depthTest:false});
+    const label = new THREE.Sprite(labelMat);
+    label.scale.set(0.35,0.35,0.35); label.position.set(0,0.44,0); pivot.add(label);
+
+    // fingertip cap on the last phalanx — domed steel cap merged into the frame
+    if(i === lenArr.length-1){
+      const tipGroup = new THREE.Group();
+      tipGroup.position.set(0,0,-len-0.06); pivot.add(tipGroup);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.17,18,12,0,Math.PI*2,0,Math.PI/2), polishedSteel);
+      cap.rotation.x = -Math.PI/2; cap.castShadow=true; tipGroup.add(cap);
+      const ringA = new THREE.Mesh(new THREE.TorusGeometry(0.13,0.02,8,20), steelMat);
+      ringA.position.z = 0.08; tipGroup.add(ringA);
+      const ringB = new THREE.Mesh(new THREE.TorusGeometry(0.11,0.016,8,20), steelMat);
+      ringB.position.z = 0.22; tipGroup.add(ringB);
+      tipGroup.userData = {part:'fingertip', name:`${f} fingertip cap`, desc:'Polished stainless terminal cap welded into the phalanx frame. Reinforces the distal end.'};
+    }
+
+    joints.push({ pivot, len, f, idx:i });
+    parent = pivot;
+  }
+  digits[f] = { anchor, joints };
+
+  // actuators and tendons: one flexor/extensor pair per joint
+  JOINTS[f].forEach((jn, ji) => {
+    ['flexor','extensor'].forEach((side, si) => {
+      const g = new THREE.Group();
+      // spool: cylinder axle (local y) oriented along world x by the wrapper,
+      // so rotation.y on the mesh itself is a true reel spin
+      const orient = new THREE.Group(); orient.rotation.z = Math.PI/2;
+      const spool = new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.14,0.22,16), anodMat[f]);
+      spool.castShadow=true; orient.add(spool); g.add(orient);
+      spool.userData = {part:'spool', name:`${f} ${jn.toUpperCase()} ${side} spool`, desc:'Anodized aluminum actuator spool. Reels the tendon in under motor torque.'};
+      // block base
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.42,0.42,0.5), brushedSteel);
+      base.position.set(0,0,0.32); base.castShadow=true; g.add(base);
+      base.userData = {part:'actuator', name:`${f} ${jn.toUpperCase()} ${side} actuator`, desc:'Brushed stainless actuator block. Houses the motor and spool bearings.'};
+      const xBase = BASES[f][0];
+      const xPos = Math.max(-1.25, Math.min(1.25, xBase*0.55)) + (ji - (JOINTS[f].length-1)/2)*0.09;
+      const yPos = side==='flexor' ? -0.62 : 1.42;
+      const zPos = 3.0 + FINGERS.indexOf(f)*0.30 + ji*0.10 + si*0.05;
+      g.position.set(xPos, yPos, zPos);
+      root.add(g); actuators.push(g);
+
+      const lineGeo = new THREE.BufferGeometry();
+      const lineMat = new THREE.LineBasicMaterial({ color: COLORS[f], linewidth: 2, transparent:true, opacity:0.95 });
+      const line = new THREE.Line(lineGeo, lineMat);
+      root.add(line);
+
+      tendons.push({ f, ji, side, line, spoolGroup:g, spool, basePos:g.position.clone() });
+    });
+  });
+});
+
+// skeleton overlay
+const skelMat = new THREE.LineBasicMaterial({ color:0x58a6ff, transparent:true, opacity:0.22 });
+const skelLines = [];
+FINGERS.forEach(f => {
+  const pts = [new THREE.Vector3(0,0,0)];
+  let z=0; SEG_LEN[f].forEach(len => { z-=len; pts.push(new THREE.Vector3(0,0,z)); });
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const line = new THREE.Line(geo, skelMat); line.visible=false; root.add(line); skelLines.push(line);
+});
+
+const state = {
+  angles: Object.fromEntries(FINGERS.map(f => [f, Object.fromEntries(JOINTS[f].map(j => [j,0]))])),
+  spread: 0, opposition: 0, wrist: {pitch:0, yaw:0}, forearm: {roll:0},
+  emg: Object.fromEntries(FINGERS.map(f => [f, {flex:0, ext:0}]))
+};
+
+function getWorldPos(obj, localOff){
+  return localOff.clone().applyMatrix4(obj.matrixWorld);
+}
+
+// Per-finger in-channel cord offsets (local to each joint pivot).
+// Fingers: flexor below (palm side), extensor above (dorsal side).
+// Thumb: flexes horizontally, so flexor is on the palm-facing lateral side.
+function cordOffset(f, side, along){
+  const mag = 0.10;
+  if(f === 'thumb') return new THREE.Vector3(side==='flexor' ? mag : -mag, 0, along || 0);
+  return new THREE.Vector3(0, side==='flexor' ? -mag : mag, along || 0);
+}
+
+function updateTendons(){
+  tendons.forEach(t => {
+    const d = digits[t.f];
+    const j = d.joints[t.ji];
+    if(!j) return;
+    const pts = [];
+    const angle = state.angles[t.f][JOINTS[t.f][t.ji]] || 0;
+    const demand = t.side==='flexor' ? angle/90 : (90-angle)/90;
+    // spool reels the cord in: the whole spool group slides toward the wrist
+    const spoolPos = t.basePos.clone().add(new THREE.Vector3(0, 0, -demand*0.35));
+    pts.push(spoolPos);
+
+    // through the carpal conduit ring at the wrist
+    const xb = BASES[t.f][0];
+    const ringY = 0.45 + (t.side==='flexor' ? -0.72 : 0.72);
+    pts.push(new THREE.Vector3(Math.max(-1, Math.min(1, xb*0.55)), ringY, 1.6));
+
+    // channel entry at the proximal palm
+    pts.push(new THREE.Vector3(xb, t.side==='flexor' ? -0.30 : 0.32, -0.7));
+
+    // inside the frame channel of every joint up to this one
+    for(let k=0;k<=t.ji;k++){
+      const jj = d.joints[k];
+      // pivots resolve in world space; bring them back into root-local so
+      // the line (a child of root) isn't transformed twice under `mount`
+      pts.push(root.worldToLocal(getWorldPos(jj.pivot, cordOffset(t.f, t.side))));
+    }
+    // insertion near the distal end of this segment
+    pts.push(root.worldToLocal(getWorldPos(j.pivot, cordOffset(t.f, t.side, -j.len*0.82))));
+
+    const tension = Math.max(0, demand);
+    t.line.geometry.setFromPoints(pts);
+    t.line.material.color.setHex(COLORS[t.f]);
+    t.line.material.opacity = 0.55 + 0.45*tension;
+
+    // true reel spin about the spool axle
+    t.spool.rotation.y = -demand * Math.PI * 2;
+  });
+}
+
+function applyAngles(){
+  FINGERS.forEach(f => {
+    const d = digits[f];
+    const isThumb = f === 'thumb';
+    const baseSpread = THREE.MathUtils.degToRad(SPREAD_BASE[f]) + (isThumb? state.opposition*0.15 : state.spread*(f==='index'?0.13 : f==='pinky'?-0.13 : 0));
+    d.anchor.rotation.y = baseSpread;
+    if(isThumb){
+      // opposition lifts the thumb toward the palm centre and rotates it in
+      d.anchor.rotation.z = -state.opposition*0.5;
+    }
+    d.joints.forEach((j, i) => {
+      const jn = JOINTS[f][i];
+      const ang = (state.angles[f][jn] || 0) * D2R;
+      if(isThumb){
+        // thumb folds across the palm (vertical hinge) and dips slightly
+        j.pivot.rotation.y = -ang;
+        j.pivot.rotation.x = ang * 0.30;
+      } else {
+        // palm faces down; flexion curls the segment toward the palm
+        j.pivot.rotation.x = -ang;
+        j.pivot.rotation.y = 0;
+      }
+    });
+  });
+  root.rotation.x = state.wrist.pitch * 0.25;
+  root.rotation.y = state.wrist.yaw * 0.25 + state.forearm.roll * 0.6;
+}
+
+const clamp = (x,a,b)=>Math.max(a,Math.min(b,x));
+const smooth = (a,b,t)=>a+(b-a)*t;
+const ease = t=> t<0.5?2*t*t : 1-Math.pow(-2*t+2,2)/2;
+
+function resetAngles(){
+  FINGERS.forEach(f => JOINTS[f].forEach(j => state.angles[f][j]=0));
+  state.spread=0; state.opposition=0; state.wrist={pitch:0,yaw:0}; state.forearm={roll:0};
+}
+
+function sampleStudy(s, t){
+  const T = studyDurations[s];
+  let u = clamp(t/T,0,1);
+  resetAngles();
+  const a = state.angles;
+  if(s===0){ // fist
+    ['index','middle','ring','pinky'].forEach((f,i)=>{
+      const delay = i*0.04;
+      const pu = clamp((u-delay)/0.96,0,1);
+      a[f].mcp = smooth(0,88,ease(pu));
+      a[f].pip = smooth(0,98,ease(pu));
+      a[f].dip = smooth(0,75,ease(pu));
+      a[f].cmc = smooth(0,18,ease(pu));
+    });
+    const thu = clamp((u-0.35)/0.65,0,1);
+    a.thumb.cmc = smooth(0,42,ease(thu));
+    a.thumb.mcp = smooth(0,50,ease(thu));
+    a.thumb.ip = smooth(0,35,ease(thu));
+    state.opposition = ease(thu)*0.6;
+  }
+  if(s===1){ // ripple
+    const order = ['index','middle','ring','pinky'];
+    order.forEach((f,i)=>{
+      const beat = i*0.18;
+      const pu = clamp((u-beat)/0.55,0,1);
+      a[f].mcp = smooth(0,88,ease(pu));
+      a[f].pip = smooth(0,98,ease(pu));
+      a[f].dip = smooth(0,75,ease(pu));
+      a[f].cmc = smooth(0,18,ease(pu));
+    });
+    a.thumb.cmc = smooth(0,22,ease(clamp(u/0.9,0,1)));
+    state.spread = 0.22;
+  }
+  if(s===2){ // pinch
+    const p = ease(clamp(u*1.15,0,1));
+    a.thumb.cmc = smooth(0,38,p); a.thumb.mcp = smooth(0,50,p); a.thumb.ip = smooth(0,30,p);
+    a.index.mcp = smooth(0,58,p); a.index.pip = smooth(0,46,p); a.index.dip = smooth(0,26,p);
+    ['middle','ring','pinky'].forEach(f => { a[f].mcp=10; a[f].pip=7; a[f].dip=5; a[f].cmc=3; });
+    state.opposition = p*0.65;
+    state.wrist.yaw = -0.08;
+  }
+  if(s===3){ // hand signs sequence: peace, metal, shaka, spock
+    const beats = [0,0.22,0.48,0.74];
+    const sig = u<0.22?0 : u<0.48?1 : u<0.74?2 : 3;
+    const ru = clamp((u-beats[sig])/0.20,0,1);
+    const names = ['peace','metal','shaka','spock'];
+    const signAngles = {
+      peace: {index:{mcp:0,pip:0,dip:0,cmc:0}, middle:{mcp:0,pip:0,dip:0,cmc:0}, ring:{mcp:86,pip:96,dip:74,cmc:5}, pinky:{mcp:84,pip:90,dip:68,cmc:5}, thumb:{cmc:12,mcp:14,ip:8}},
+      metal: {index:{mcp:0,pip:0,dip:0,cmc:0}, middle:{mcp:88,pip:95,dip:72,cmc:5}, ring:{mcp:84,pip:90,dip:68,cmc:5}, pinky:{mcp:0,pip:0,dip:0,cmc:0}, thumb:{cmc:10,mcp:12,ip:6}},
+      shaka:  {index:{mcp:86,pip:94,dip:70,cmc:5}, middle:{mcp:86,pip:94,dip:70,cmc:5}, ring:{mcp:86,pip:94,dip:70,cmc:5}, pinky:{mcp:0,pip:0,dip:0,cmc:0}, thumb:{cmc:18,mcp:20,ip:12}},
+      spock:  {index:{mcp:0,pip:0,dip:0,cmc:0}, middle:{mcp:0,pip:0,dip:0,cmc:0}, ring:{mcp:84,pip:90,dip:68,cmc:5}, pinky:{mcp:84,pip:90,dip:68,cmc:5}, thumb:{cmc:8,mcp:10,ip:5}}
+    };
+    FINGERS.forEach(f => {
+      JOINTS[f].forEach(jn => {
+        const cur = signAngles[names[sig]][f][jn] || 0;
+        const prev = sig>0 ? signAngles[names[sig-1]][f][jn] || 0 : 0;
+        a[f][jn] = smooth(prev, cur, ease(ru));
+      });
+    });
+    state.spread = sig===3 ? 0.48 : 0.28;
+    state.opposition = (sig===2?0.45:sig===3?0.30:0.18);
+  }
+  if(s===4){ // every actuator sweep
+    FINGERS.forEach((f,fi) => {
+      JOINTS[f].forEach((jn,ji) => {
+        const phase = (fi*0.7 + ji*0.35) + u*Math.PI*2;
+        a[f][jn] = 42 + 44*Math.sin(phase);
+      });
+    });
+    state.forearm.roll = Math.sin(u*Math.PI*2)*0.35;
+  }
+  // EMG estimates
+  FINGERS.forEach(f => {
+    const flexSum = JOINTS[f].reduce((s,j)=>s+(a[f][j]/90),0)/JOINTS[f].length;
+    state.emg[f].flex = flexSum;
+    state.emg[f].ext = 1 - flexSum;
+  });
+}
+
+const studyDurations = [5,6,5,10,8];
+const studyNotes = [
+  `<p><b>01 — Fist.</b> The flexor cords shorten on their spools. Distal joints close last because they have smaller moment arms and less mechanical advantage.</p><p>Watch the thumb: it waits until the fingers are nearly closed before folding across the palm, the way a real hand avoids self-collision.</p>`,
+  `<p><b>02 — Ripple.</b> Identical hardware to the fist; only the timing differs. Each finger gets the same curl one beat after the one before it.</p><p>The roll is software. Nothing in the mechanism couples the fingers together — each cord is independent from its own actuator.</p>`,
+  `<p><b>03 — Pinch.</b> Thumb CMC/MCP flex and the index curls until the pads meet in space. The other digits stay extended but relaxed to clear the workspace.</p><p>This is a precision grasp: high thumb opposition, low overall force.</p>`,
+  `<p><b>04 — Hand signs.</b> Peace, metal, shaka, spock — sequential. Each sign is just a different activation table across the same 19 joints and 38 cords.</p><p>The transition timing is fixed by the choreography; in a real robot it would be collision-checked.</p>`,
+  `<p><b>05 — Every actuator.</b> All 38 cords and 19 joints sweep across their range. The forearm roll adds a global degree of freedom.</p><p>Use this study to check for cable-cable interference and to confirm each spool pays out and takes up correctly.</p>`
+];
+
+let currentStudy = 0;
+let time = 0;
+let paused = false;
+let totalTime = studyDurations[0];
+
+function setStudy(i){
+  currentStudy = clamp(i,0,4);
+  totalTime = studyDurations[currentStudy];
+  time = 0;
+  document.querySelectorAll('.study').forEach((el,idx)=>el.classList.toggle('active',idx===currentStudy));
+  document.getElementById('notes').innerHTML = studyNotes[currentStudy];
+}
+
+// --- live bridge mode ------------------------------------------------------
+// The page is served by the physics bridge, which streams the real arm state
+// on /events. While that stream is alive, render IT instead of the canned
+// study, so entity-driven goals are visible as they happen. Study playback
+// resumes automatically a few seconds after the stream goes quiet.
+let liveState = null;
+let liveSeenAt = -Infinity;
+let liveEnabled = true;
+try {
+  const es = new EventSource('/events');
+  es.onmessage = e => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'arm' && msg.state) {
+        liveState = msg.state;
+        liveSeenAt = performance.now();
+      }
+    } catch(_){}
+  };
+  es.onerror = () => { liveState = null; };
+} catch(_) { /* opened without the bridge -> study mode only */ }
+
+function liveActive(){
+  return liveEnabled && liveState && (performance.now() - liveSeenAt) < 4000;
+}
+
+function applyLiveState(s){
+  resetAngles();
+  Object.entries(s.fingers || {}).forEach(([f, fd]) => {
+    if(!state.angles[f]) return;
+    Object.entries(fd.joints || {}).forEach(([j, jd]) => {
+      if(j in state.angles[f]) state.angles[f][j] = jd.angle || 0;
+    });
+  });
+  state.spread = s.spread || 0;
+  state.opposition = s.thumb_opposition || 0;
+  state.wrist = {pitch: (s.wrist||{}).pitch || 0, yaw: (s.wrist||{}).yaw || 0};
+  state.forearm = {roll: (s.forearm||{}).roll || 0};
+  // EMG bars: mean flexor activation per finger
+  FINGERS.forEach(f => {
+    const fd = (s.fingers||{})[f];
+    if(!fd) return;
+    const acts = Object.values(fd.joints||{}).map(jd => jd.flex_activation || 0);
+    state.emg[f].flex = acts.length ? acts.reduce((a,b)=>a+b,0)/acts.length : 0;
+  });
+}
+
+function update(){
+  const live = liveActive();
+  if (live) applyLiveState(liveState); else sampleStudy(currentStudy, time);
+  applyAngles();
+  mount.updateMatrixWorld(true);
+  updateTendons();
+  skelLines.forEach((line,fi)=>{
+    const f=FINGERS[fi]; const pts=[];
+    pts.push(digits[f].anchor.position.clone());
+    let z=0; digits[f].joints.forEach(j => { z-=j.len; pts.push(new THREE.Vector3(0,0,z)); });
+    line.geometry.setFromPoints(pts);
+  });
+
+  document.getElementById('frame').textContent = Math.floor(time*60);
+  document.getElementById('tread').textContent = live ? ('LIVE · ' + (liveState.goal || 'idle')) : time.toFixed(2);
+  document.getElementById('time').textContent = `${time.toFixed(2)} / ${totalTime.toFixed(2)}`;
+  document.getElementById('scrub').value = clamp(time/totalTime,0,1)*1000;
+  ['index-mcp','index-pip','middle-mcp','middle-pip','thumb-cmc','thumb-mcp'].forEach(id => {
+    const [f,j] = id.split('-');
+    const el = document.getElementById('r-'+id);
+    if(el) el.textContent = Math.round(state.angles[f][j]||0)+'°';
+  });
+  // EMG bars
+  FINGERS.forEach(f => {
+    const bar = document.getElementById('emg-'+f);
+    if(bar) bar.style.width = Math.round(state.emg[f].flex*100)+'%';
+  });
+}
+
+let last = performance.now();
+function animate(now){
+  const dt = Math.min(0.05,(now-last)/1000); last=now;
+  if(!paused){
+    time += dt;
+    if(time > totalTime){ time = totalTime; paused=true; document.getElementById('play').textContent='Play'; }
+  }
+  update();
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+
+// UI wiring
+const playBtn = document.getElementById('play');
+playBtn.addEventListener('click',()=>{ paused=!paused; playBtn.textContent = paused?'Play':'Pause'; if(time>=totalTime){time=0;paused=false;playBtn.textContent='Pause';} });
+document.getElementById('restart').addEventListener('click',()=>{ time=0; paused=false; playBtn.textContent='Pause'; });
+document.getElementById('prev').addEventListener('click',()=>setStudy(currentStudy-1));
+document.getElementById('next').addEventListener('click',()=>setStudy(currentStudy+1));
+document.getElementById('scrub').addEventListener('input', e=>{ time = parseInt(e.target.value)/1000*totalTime; paused=true; playBtn.textContent='Play'; });
+document.querySelectorAll('.study').forEach(el => el.addEventListener('click',()=>setStudy(parseInt(el.dataset.s))));
+
+document.getElementById('v-live').addEventListener('change', e=>{ liveEnabled = e.target.checked; });
+
+['links','cords','pulleys','actuators','skeleton'].forEach(id=>{
+  document.getElementById('v-'+id).addEventListener('change', e=>{
+    const on = e.target.checked;
+    if(id==='links') links.forEach(m=>m.visible=on);
+    if(id==='cords') tendons.forEach(t=>t.line.visible=on);
+    if(id==='pulleys') pulleys.forEach(m=>m.visible=on);
+    if(id==='actuators') actuators.forEach(m=>m.visible=on);
+    if(id==='skeleton') skelLines.forEach(m=>m.visible=on);
+  });
+});
+
+const explodeSlider = document.getElementById('explode');
+const explodeVal = document.getElementById('explodeVal');
+explodeSlider.addEventListener('input', ()=>{
+  const p = parseInt(explodeSlider.value)/100;
+  explodeVal.textContent = explodeSlider.value+'%';
+  FINGERS.forEach(f => {
+    digits[f].anchor.position.set(BASES[f][0], BASES[f][1], BASES[f][2] + p*3);
+    digits[f].joints.forEach((j,i) => {
+      j.pivot.position.set(0,0, (i===0?0:-SEG_LEN[f][i-1]) - p*1.2);
+    });
+  });
+});
+
+// Hand placement controls (persisted in localStorage)
+const placementUI = [
+  ['px', 'pxVal', v=>v.toFixed(1)],
+  ['py', 'pyVal', v=>v.toFixed(1)],
+  ['pz', 'pzVal', v=>v.toFixed(1)],
+  ['yaw',   'yawVal',   v=>Math.round(v)+'°'],
+  ['pitch', 'pitchVal', v=>Math.round(v)+'°'],
+  ['roll',  'rollVal',  v=>Math.round(v)+'°'],
+];
+function syncPlacementUI(){
+  placementUI.forEach(([key, valId, fmt])=>{
+    document.getElementById(key).value = placement[key];
+    document.getElementById(valId).textContent = fmt(placement[key]);
+  });
+}
+placementUI.forEach(([key, valId, fmt])=>{
+  document.getElementById(key).addEventListener('input', e=>{
+    placement[key] = parseFloat(e.target.value);
+    document.getElementById(valId).textContent = fmt(placement[key]);
+    applyPlacement();
+    localStorage.setItem(PLACEMENT_KEY, JSON.stringify(placement));
+  });
+});
+document.getElementById('resetPlacement').addEventListener('click', ()=>{
+  Object.assign(placement, DEFAULT_PLACEMENT);
+  applyPlacement();
+  syncPlacementUI();
+  localStorage.setItem(PLACEMENT_KEY, JSON.stringify(placement));
+});
+syncPlacementUI();
+
+window.addEventListener('keydown', e=>{
+  if(e.code==='Space'){ e.preventDefault(); paused=!paused; playBtn.textContent=paused?'Play':'Pause'; }
+  if(e.code==='ArrowLeft') setStudy(currentStudy-1);
+  if(e.code==='ArrowRight') setStudy(currentStudy+1);
+  if(e.code==='KeyR'){ time=0; paused=false; playBtn.textContent='Pause'; }
+});
+
+function resize(){
+  const rect = document.getElementById('scene').getBoundingClientRect();
+  renderer.setSize(rect.width, rect.height);
+  camera.aspect = rect.width/rect.height;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+// EMG panel
+const emgDiv = document.getElementById('emg');
+FINGERS.forEach(f => {
+  const row = document.createElement('div');
+  row.className='emg';
+  row.innerHTML = `<div style="font-size:10px;color:var(--dim);display:flex;justify-content:space-between;margin-bottom:3px;"><span>${f}</span><span id="emg-t-${f}">0%</span></div><div class="bar"><div class="fill" id="emg-${f}"></div></div>`;
+  emgDiv.appendChild(row);
+});
+
+// URL deep-link
+const params = new URLSearchParams(location.search);
+if(params.has('study')) setStudy(parseInt(params.get('study'))-1);
+if(params.has('t')){ time = parseFloat(params.get('t')); time = clamp(time,0,totalTime); paused = true; playBtn.textContent='Play'; }
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const card = document.getElementById('infocard');
+const cardTitle = document.getElementById('card-title');
+const cardBody = document.getElementById('card-body');
+let cardPinned = false;
+function showCard(e, hit){
+  const rect = renderer.domElement.getBoundingClientRect();
+  let obj = hit.object;
+  while(obj && !obj.userData?.name) obj = obj.parent;
+  if(obj && obj.userData?.name){
+    cardTitle.textContent = obj.userData.name;
+    cardBody.textContent = obj.userData.desc;
+    card.style.display = 'block';
+    const ex = (e.clientX ?? e.touches?.[0]?.clientX ?? rect.width/2) - rect.left;
+    const ey = (e.clientY ?? e.touches?.[0]?.clientY ?? rect.height/2) - rect.top;
+    card.style.left = Math.min(ex + 14, rect.width - 230) + 'px';
+    card.style.top = Math.min(ey + 14, rect.height - 120) + 'px';
+    return true;
+  }
+  return false;
+}
+function pick(e){
+  const rect = renderer.domElement.getBoundingClientRect();
+  const cx = e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : rect.width/2);
+  const cy = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : rect.height/2);
+  mouse.x = ((cx - rect.left)/rect.width)*2 - 1;
+  mouse.y = -((cy - rect.top)/rect.height)*2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const clickable = [root, ...pivots, ...pulleys, ...screws, ...links, ...actuators, ...tendons.map(t => t.line)];
+  return raycaster.intersectObjects(clickable, true)[0];
+}
+renderer.domElement.addEventListener('pointermove', e=>{
+  if(cardPinned) return;
+  const hit = pick(e);
+  if(hit && showCard(e, hit)) return;
+  card.style.display = 'none';
+});
+renderer.domElement.addEventListener('click', e=>{
+  const hit = pick(e);
+  if(hit && showCard(e, hit)){ cardPinned = true; return; }
+  cardPinned = false;
+  card.style.display = 'none';
+});
+renderer.domElement.addEventListener('touchstart', e=>{
+  const hit = pick(e);
+  if(hit){ showCard(e, hit); cardPinned = true; }
+}, {passive:true});
+
+// initial render done below after wiring
+applyAngles();
+updateTendons();
+document.getElementById('loading').style.display='none';
+requestAnimationFrame(animate);
+
+// console/debug handle: window.__hand.mount, .placement, .applyPlacement() etc.
+window.__hand = {mount, root, digits, tendons, placement, applyPlacement, DEFAULT_PLACEMENT};
+</script>
+</body>
+</html>
