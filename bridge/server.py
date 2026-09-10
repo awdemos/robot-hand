@@ -194,8 +194,11 @@ POSTURES = {
         spread=0.28, opp=0.0, wrist={"pitch": -0.15, "yaw": 0.0}, forearm={"roll": 0.0},
     ),
     "wave": dict(
-        joint_targets={f: {j: 8.0 for j in JOINTS[f]} for f in FINGERS},
-        spread=0.55, opp=0.10, wrist={"pitch": 0.0, "yaw": 0.0}, forearm={"roll": 0.0},
+        joint_targets={
+            "thumb": {"cmc": 14.0, "mcp": 12.0, "ip": 8.0},
+            **{f: {"mcp": 20.0, "pip": 16.0, "dip": 10.0} for f in ("index", "middle", "ring", "pinky")},
+        },
+        spread=0.10, opp=0.15, wrist={"pitch": 0.0, "yaw": 0.0}, forearm={"roll": 0.0},
     ),
     "middle_finger": dict(
         joint_targets={
@@ -209,13 +212,16 @@ POSTURES = {
     ),
     "thumbs_up": dict(
         joint_targets={
-            "thumb": {"cmc": 12.0, "mcp": 8.0, "ip": 4.0},
+            # Full opposition twists the thumb's fold axis so it arcs up over
+            # the palm instead of lying flat across it; mcp/ip stay nearly
+            # straight so it reads as a long raised thumb, not a curled nub.
+            "thumb": {"cmc": 40.0, "mcp": 10.0, "ip": 5.0},
             "index": {"mcp": 85.0, "pip": 92.0, "dip": 68.0},
             "middle": {"mcp": 85.0, "pip": 92.0, "dip": 68.0},
             "ring": {"mcp": 85.0, "pip": 92.0, "dip": 68.0},
             "pinky": {"mcp": 85.0, "pip": 92.0, "dip": 68.0},
         },
-        spread=0.05, opp=0.15, wrist={"pitch": 0.0, "yaw": 0.0}, forearm={"roll": 0.0},
+        spread=0.05, opp=1.0, wrist={"pitch": -0.2, "yaw": 0.0}, forearm={"roll": 0.0},
     ),
 }
 # fill in missing thumb targets for reach
@@ -235,12 +241,14 @@ class Tendon:
     force: float = 0.0
     slip: float = 0.0
 
-    def update(self, dt, joint_angle_deg):
+    def update(self, dt, path_delta):
         target_retraction = self.activation * self.max_retraction
         self.motor_retraction += (target_retraction - self.motor_retraction) * min(1.0, 7.0 * dt)
-        ma_f, _ = MOMENT_ARM[self.name.split("_")[1]]
-        joint_shortening = math.radians(joint_angle_deg) * ma_f
-        strain = max(0.0, self.motor_retraction - joint_shortening)
+        # path_delta: tendon path length change from joint rotation (cm).
+        # Flexion shortens the flexor path (negative) and stretches the
+        # extensor path (positive) — the stretch is what lets an extensor
+        # hold a joint against its flexor at mid-range angles.
+        strain = max(0.0, self.motor_retraction + path_delta)
         passive = self.stiffness * strain
         active = self.max_force * _sigmoid(strain, k=25.0, mid=0.10) * _sigmoid(self.activation, k=12.0, mid=0.15)
         self.force = passive + active
@@ -271,15 +279,19 @@ class Joint:
         max_a = MAX_ANGLE[self.name]
         target_angle = _clamp(target_angle, 0.0, max_a)
 
-        desired_activation = _clamp((target_angle / max_a) ** 0.85)
+        base = _clamp((target_angle / max_a) ** 0.85)
+        # closed-loop correction: pure feedforward overshoots badly in the
+        # mid-range, so trim both antagonists by the tracking error
+        err = (target_angle - self.angle) / max_a
+        desired_activation = _clamp(base + 1.4 * err)
         self.flexor.activation = desired_activation
         coact = 0.04 + 0.22 * stress
-        self.extensor.activation = 0.06 + coact + 0.15 * (self.angle / max_a)
-
-        ff = self.flexor.update(dt, self.angle)
-        fe = self.extensor.update(dt, self.angle)
+        self.extensor.activation = 0.06 + coact + 0.15 * (self.angle / max_a) + _clamp(-1.2 * err, 0.0, 0.6)
 
         ma_f, ma_e = MOMENT_ARM[self.name]
+        stretch = math.radians(self.angle)
+        ff = self.flexor.update(dt, -stretch * ma_f)
+        fe = self.extensor.update(dt, +stretch * ma_e)
         torque = ff * ma_f - fe * ma_e
 
         damp = DAMPING * self.velocity + 0.3 * math.tanh(self.velocity * 0.15)
@@ -456,8 +468,12 @@ class HandModel:
             tremor_amp = 0.40 * stress + 0.20 * arousal
 
             if self.goal and self.goal["kind"] == "wave":
-                self.goal["wave_phase"] += dt * 9.0
-                self.wrist_target["yaw"] = math.sin(self.goal["wave_phase"]) * 0.55
+                self.goal["wave_phase"] += dt * 5.5
+                s = math.sin(self.goal["wave_phase"])
+                # yaw alone renders at 0.25 gain (a weak swivel); forearm roll
+                # renders at 0.6, so together the whole hand rocks side to side
+                self.wrist_target["yaw"] = s * 0.6
+                self.forearm_target["roll"] = s * 0.5
             if self.goal and time.monotonic() > self.goal["until"]:
                 for f in FINGERS:
                     self.curl_target[f] = min(self.curl_target[f], 0.12)
@@ -465,6 +481,8 @@ class HandModel:
                         self.joint_target[f][j] = min(self.joint_target[f][j], 15.0)
                 self.spread_target = 0.15
                 self.thumb_opposition = 0.05
+                self.wrist_target = {"pitch": 0.0, "yaw": 0.0}
+                self.forearm_target = {"roll": 0.0}
                 self.load_contact = False
                 self.goal = None
 
