@@ -162,9 +162,9 @@
       <div class="slider"><label><span>Position X</span><span id="pxVal">0.0</span></label><input type="range" id="px" min="-8" max="8" step="0.1"></div>
       <div class="slider"><label><span>Position Y</span><span id="pyVal">0.0</span></label><input type="range" id="py" min="-4" max="6" step="0.1"></div>
       <div class="slider"><label><span>Position Z</span><span id="pzVal">0.0</span></label><input type="range" id="pz" min="-8" max="8" step="0.1"></div>
-      <div class="slider"><label><span>Yaw</span><span id="yawVal">0°</span></label><input type="range" id="yaw" min="-180" max="180" step="1"></div>
-      <div class="slider"><label><span>Pitch</span><span id="pitchVal">0°</span></label><input type="range" id="pitch" min="-180" max="180" step="1"></div>
-      <div class="slider"><label><span>Roll (180° = palm up)</span><span id="rollVal">180°</span></label><input type="range" id="roll" min="-180" max="180" step="1"></div>
+      <div class="slider"><label><span>Yaw</span><span id="yawVal">0°</span></label><input type="range" id="yaw" min="-180" max="180" step="0.1"></div>
+      <div class="slider"><label><span>Pitch</span><span id="pitchVal">0°</span></label><input type="range" id="pitch" min="-180" max="180" step="0.1"></div>
+      <div class="slider"><label><span>Roll (180° = palm up)</span><span id="rollVal">180°</span></label><input type="range" id="roll" min="-180" max="180" step="0.1"></div>
       <button id="resetPlacement" style="width:100%;background:#252a31;border:1px solid var(--line);color:var(--dim);border-radius:4px;padding:6px;font-size:10px;cursor:pointer;margin-top:4px;">Reset placement</button>
     </div>
 
@@ -884,6 +884,7 @@ function applyLiveState(s){
 }
 
 function update(){
+  if(placementDirty){ applyPlacement(); placementDirty=false; }
   const manual = manualActive();
   const live = !manual && liveActive();
   if (manual) applyManualState();
@@ -1003,9 +1004,9 @@ const placementUI = [
   ['px', 'pxVal', v=>v.toFixed(1)],
   ['py', 'pyVal', v=>v.toFixed(1)],
   ['pz', 'pzVal', v=>v.toFixed(1)],
-  ['yaw',   'yawVal',   v=>Math.round(v)+'°'],
-  ['pitch', 'pitchVal', v=>Math.round(v)+'°'],
-  ['roll',  'rollVal',  v=>Math.round(v)+'°'],
+  ['yaw',   'yawVal',   v=>v.toFixed(1)+'°'],
+  ['pitch', 'pitchVal', v=>v.toFixed(1)+'°'],
+  ['roll',  'rollVal',  v=>v.toFixed(1)+'°'],
 ];
 function syncPlacementUI(){
   placementUI.forEach(([key, valId, fmt])=>{
@@ -1013,23 +1014,18 @@ function syncPlacementUI(){
     document.getElementById(valId).textContent = fmt(placement[key]);
   });
 }
-// Placement slider updates are coalesced to the next animation frame. Range
-// `input` events can fire many times per frame during a fast drag; applying
-// the transform immediately on each one causes yaw/pitch/roll jitter.
-let placementRaf = null;
-function schedulePlacementApply(){
-  if(placementRaf) return;
-  placementRaf = requestAnimationFrame(()=>{
-    applyPlacement();
-    placementRaf = null;
-  });
-}
+// Placement slider updates set a dirty flag that is consumed once per frame
+// inside update(). Range `input` events can fire many times per frame during a
+// fast drag; applying the transform immediately on each one causes yaw/pitch/
+// roll jitter, and using a separate rAF can run out of order with the render.
+let placementDirty = false;
+function markPlacementDirty(){ placementDirty = true; }
 placementUI.forEach(([key, valId, fmt])=>{
   const el = document.getElementById(key);
   el.addEventListener('input', e=>{
     placement[key] = parseFloat(e.target.value);
     document.getElementById(valId).textContent = fmt(placement[key]);
-    schedulePlacementApply();
+    markPlacementDirty();
   });
   // Persist only when the user releases the slider; writing localStorage on
   // every input event can also stutter the render thread during fast dragging.
@@ -1039,7 +1035,7 @@ placementUI.forEach(([key, valId, fmt])=>{
 });
 document.getElementById('resetPlacement').addEventListener('click', ()=>{
   Object.assign(placement, DEFAULT_PLACEMENT);
-  applyPlacement();
+  markPlacementDirty();
   syncPlacementUI();
   localStorage.setItem(PLACEMENT_KEY, JSON.stringify(placement));
 });
