@@ -225,8 +225,7 @@ renderer.toneMappingExposure = 1.25;
 document.getElementById('scene').appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
+controls.enableDamping = false;
 controls.minDistance = 8;
 controls.maxDistance = 80;
 controls.target.set(0, 0.2, -6);
@@ -580,6 +579,11 @@ FINGERS.forEach(f => {
       root.add(g); actuators.push(g);
 
       const lineGeo = new THREE.BufferGeometry();
+      // Pre-allocate a large enough position buffer and update it in place;
+      // setFromPoints allocates a new Float32Array every frame, which creates
+      // GC pressure that shows up as frame-time spikes / hand jitter.
+      lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(10 * 3), 3));
+      lineGeo.setDrawRange(0, 0);
       const lineMat = new THREE.LineBasicMaterial({ color: COLORS[f], linewidth: 2, transparent:true, opacity:0.95 });
       const line = new THREE.Line(lineGeo, lineMat);
       root.add(line);
@@ -605,51 +609,63 @@ const state = {
   emg: Object.fromEntries(FINGERS.map(f => [f, {flex:0, ext:0}]))
 };
 
-function getWorldPos(obj, localOff){
-  return localOff.clone().applyMatrix4(obj.matrixWorld);
+function getWorldPos(obj, localOff, target = new THREE.Vector3()){
+  return target.copy(localOff).applyMatrix4(obj.matrixWorld);
 }
 
 // Per-finger in-channel cord offsets (local to each joint pivot).
 // Fingers: flexor below (palm side), extensor above (dorsal side).
 // Thumb: flexes horizontally, so flexor is on the palm-facing lateral side.
-function cordOffset(f, side, along){
+function cordOffset(f, side, along, target = new THREE.Vector3()){
   const mag = 0.10;
-  if(f === 'thumb') return new THREE.Vector3(side==='flexor' ? mag : -mag, 0, along || 0);
-  return new THREE.Vector3(0, side==='flexor' ? -mag : mag, along || 0);
+  if(f === 'thumb') target.set(side==='flexor' ? mag : -mag, 0, along || 0);
+  else target.set(0, side==='flexor' ? -mag : mag, along || 0);
+  return target;
 }
 
 function updateTendons(){
+  const tmp = new THREE.Vector3();
+  const tmp2 = new THREE.Vector3();
   tendons.forEach(t => {
     const d = digits[t.f];
     const j = d.joints[t.ji];
     if(!j) return;
-    const pts = [];
+    const posAttr = t.line.geometry.attributes.position;
+    const arr = posAttr.array;
+    let pi = 0;
+    function pushPoint(v){
+      arr[pi++] = v.x; arr[pi++] = v.y; arr[pi++] = v.z;
+    }
     const angle = state.angles[t.f][JOINTS[t.f][t.ji]] || 0;
     const demand = t.side==='flexor' ? angle/90 : (90-angle)/90;
     // spool reels the cord in: the whole spool group slides toward the wrist
-    const spoolPos = t.basePos.clone().add(new THREE.Vector3(0, 0, -demand*0.35));
-    pts.push(spoolPos);
+    pushPoint(tmp.set(0, 0, -demand*0.35).add(t.basePos));
 
     // through the carpal conduit ring at the wrist
     const xb = BASES[t.f][0];
     const ringY = 0.45 + (t.side==='flexor' ? -0.72 : 0.72);
-    pts.push(new THREE.Vector3(Math.max(-1, Math.min(1, xb*0.55)), ringY, 1.6));
+    pushPoint(tmp.set(Math.max(-1, Math.min(1, xb*0.55)), ringY, 1.6));
 
     // channel entry at the proximal palm
-    pts.push(new THREE.Vector3(xb, t.side==='flexor' ? -0.30 : 0.32, -0.7));
+    pushPoint(tmp.set(xb, t.side==='flexor' ? -0.30 : 0.32, -0.7));
 
     // inside the frame channel of every joint up to this one
     for(let k=0;k<=t.ji;k++){
       const jj = d.joints[k];
       // pivots resolve in world space; bring them back into root-local so
       // the line (a child of root) isn't transformed twice under `mount`
-      pts.push(root.worldToLocal(getWorldPos(jj.pivot, cordOffset(t.f, t.side))));
+      const offset = cordOffset(t.f, t.side, 0, tmp);
+      const worldPos = getWorldPos(jj.pivot, offset, tmp2);
+      pushPoint(root.worldToLocal(worldPos));
     }
     // insertion near the distal end of this segment
-    pts.push(root.worldToLocal(getWorldPos(j.pivot, cordOffset(t.f, t.side, -j.len*0.82))));
+    const offset = cordOffset(t.f, t.side, -j.len*0.82, tmp);
+    const worldPos = getWorldPos(j.pivot, offset, tmp2);
+    pushPoint(root.worldToLocal(worldPos));
 
     const tension = Math.max(0, demand);
-    t.line.geometry.setFromPoints(pts);
+    posAttr.needsUpdate = true;
+    t.line.geometry.setDrawRange(0, pi/3);
     t.line.material.color.setHex(COLORS[t.f]);
     t.line.material.opacity = 0.55 + 0.45*tension;
 
@@ -894,6 +910,7 @@ function update(){
   mount.updateMatrixWorld(true);
   updateTendons();
   skelLines.forEach((line,fi)=>{
+    if(!line.visible) return;
     const f=FINGERS[fi]; const pts=[];
     pts.push(digits[f].anchor.position.clone());
     let z=0; digits[f].joints.forEach(j => { z-=j.len; pts.push(new THREE.Vector3(0,0,z)); });
