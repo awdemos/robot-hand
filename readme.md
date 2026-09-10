@@ -54,11 +54,13 @@ For console scripting, `window.__hand` exposes `mount`, `root`, `digits`,
 When the page is served by the bridge it subscribes to `/events` (SSE) and
 renders the **real physics state** instead of the canned studies — so
 entity-driven goals (`hand: fist`, `/hand goal wave`, volition) are visible
-the moment they happen. The top-left corner shows `LIVE · <goal>` while the
-stream is fresh; a few seconds after the stream goes quiet the page falls
-back to study playback. The **Live bridge** checkbox in "View & visibility"
-switches live rendering off to get back to the studies while the bridge is
-up. Joint readouts and EMG bars reflect the live state too.
+the moment they happen. Live takes over while a goal/posture is active or
+any joint is still moving, holds for a few seconds of settle time, then
+hands control back to the movement studies — the studies stay fully
+interactive whenever the bridge is idle. The top-left corner shows
+`LIVE · <goal>` during live control. The **Live bridge** checkbox in
+"View & visibility" switches live rendering off entirely. Joint readouts
+and EMG bars reflect the live state too.
 
 ## Replicanta integration
 

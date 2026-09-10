@@ -263,12 +263,12 @@ class Joint:
         torque = ff * ma_f - fe * ma_e
 
         damp = DAMPING * self.velocity + 0.3 * math.tanh(self.velocity * 0.15)
-        stop = 0.0
+        # hard joint limits: cancel torque driving into the stop. Velocity
+        # into the stop is zeroed at the clamp below, so a pose held at a
+        # limit settles to ~zero velocity instead of chattering forever.
         if self.angle <= 0.0 and torque < 0.0:
-            stop = -torque
             torque = 0.0
         if self.angle >= max_a and torque > 0.0:
-            stop = -torque
             torque = 0.0
 
         self.contact = 0.0
@@ -277,7 +277,7 @@ class Joint:
         if load_contact and desired_activation > 0.55:
             self.contact = max(self.contact, 0.5)
 
-        accel = (torque * 100.0 - damp - stop * 50.0) / INERTIA
+        accel = (torque * 100.0 - damp) / INERTIA
         accel += tremor
 
         self.velocity += accel * dt
@@ -285,10 +285,12 @@ class Joint:
         self.angle += self.velocity * dt
         if self.angle < 0.0:
             self.angle = 0.0
-            self.velocity *= -0.25
+            if self.velocity < 0.0:
+                self.velocity = 0.0
         if self.angle > max_a:
             self.angle = max_a
-            self.velocity *= -0.25
+            if self.velocity > 0.0:
+                self.velocity = 0.0
 
         work = abs(self.velocity * math.radians(1) * torque) + 0.08 * ff + 0.05 * fe
         self.heat = max(0.0, self.heat + (work * 0.0008 - 0.008) * dt)

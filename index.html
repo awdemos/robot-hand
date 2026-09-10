@@ -793,7 +793,9 @@ function setStudy(i){
 // resumes automatically a few seconds after the stream goes quiet.
 let liveState = null;
 let liveSeenAt = -Infinity;
+let liveHoldUntil = 0;
 let liveEnabled = true;
+let prevAngles = null;
 try {
   const es = new EventSource('/events');
   es.onmessage = e => {
@@ -802,6 +804,33 @@ try {
       if (msg.type === 'arm' && msg.state) {
         liveState = msg.state;
         liveSeenAt = performance.now();
+        // Hold live rendering only while the bridge is actually doing
+        // something: an active goal/posture, or joints still moving.
+        // A settled bridge streams forever with all velocities at 0 —
+        // that must hand control back to the movement studies.
+        const s = msg.state;
+        if (s.goal) {
+          liveHoldUntil = liveSeenAt + 4000;
+        } else {
+          // visible motion = angles actually changing between frames (a
+          // joint pinned at its limit can report phantom velocity, so the
+          // velocity field alone is not a trustworthy motion signal)
+          let maxDelta = 0;
+          const cur = {};
+          for (const [f, fd] of Object.entries(s.fingers || {})) {
+            for (const [j, jd] of Object.entries(fd.joints || {})) {
+              cur[f + '/' + j] = jd.angle || 0;
+            }
+          }
+          if (prevAngles) {
+            for (const k in cur) {
+              const d = Math.abs(cur[k] - (k in prevAngles ? prevAngles[k] : cur[k]));
+              if (d > maxDelta) maxDelta = d;
+            }
+          }
+          prevAngles = cur;
+          if (maxDelta > 0.05) liveHoldUntil = Math.max(liveHoldUntil, liveSeenAt + 1500);
+        }
       }
     } catch(_){}
   };
@@ -809,7 +838,8 @@ try {
 } catch(_) { /* opened without the bridge -> study mode only */ }
 
 function liveActive(){
-  return liveEnabled && liveState && (performance.now() - liveSeenAt) < 4000;
+  const now = performance.now();
+  return liveEnabled && liveState && (now - liveSeenAt) < 4000 && now < liveHoldUntil;
 }
 
 function applyLiveState(s){
@@ -847,7 +877,7 @@ function update(){
   });
 
   document.getElementById('frame').textContent = Math.floor(time*60);
-  document.getElementById('tread').textContent = live ? ('LIVE · ' + (liveState.goal || 'idle')) : time.toFixed(2);
+  document.getElementById('tread').textContent = live ? ('LIVE · ' + (liveState.goal || 'moving')) : time.toFixed(2);
   document.getElementById('time').textContent = `${time.toFixed(2)} / ${totalTime.toFixed(2)}`;
   document.getElementById('scrub').value = clamp(time/totalTime,0,1)*1000;
   ['index-mcp','index-pip','middle-mcp','middle-pip','thumb-cmc','thumb-mcp'].forEach(id => {
