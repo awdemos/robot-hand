@@ -167,6 +167,16 @@
       <div class="slider"><label><span>Roll (180° = palm up)</span><span id="rollVal">180°</span></label><input type="range" id="roll" min="-180" max="180" step="1"></div>
       <button id="resetPlacement" style="width:100%;background:#252a31;border:1px solid var(--line);color:var(--dim);border-radius:4px;padding:6px;font-size:10px;cursor:pointer;margin-top:4px;">Reset placement</button>
     </div>
+
+    <div class="section">
+      <h3>Manual drive</h3>
+      <div class="slider"><label><span>index</span><span id="mc-indexVal">0%</span></label><input type="range" id="mc-index" min="0" max="100" value="0"></div>
+      <div class="slider"><label><span>middle</span><span id="mc-middleVal">0%</span></label><input type="range" id="mc-middle" min="0" max="100" value="0"></div>
+      <div class="slider"><label><span>ring</span><span id="mc-ringVal">0%</span></label><input type="range" id="mc-ring" min="0" max="100" value="0"></div>
+      <div class="slider"><label><span>pinky</span><span id="mc-pinkyVal">0%</span></label><input type="range" id="mc-pinky" min="0" max="100" value="0"></div>
+      <div class="slider"><label><span>thumb</span><span id="mc-thumbVal">0%</span></label><input type="range" id="mc-thumb" min="0" max="100" value="0"></div>
+      <div style="font-size:10px;color:var(--dim);margin-top:4px;">Drag to preview; releasing sends the pose to the bridge.</div>
+    </div>
   </aside>
 
   <div id="infocard" class="infocard" style="display:none;">
@@ -777,11 +787,18 @@ let currentStudy = 0;
 let time = 0;
 let paused = false;
 let totalTime = studyDurations[0];
+// Picking a study is explicit user intent: it wins over live bridge
+// rendering for the study's full duration, then live resumes.
+let studyHoldUntil = 0;
 
 function setStudy(i){
   currentStudy = clamp(i,0,4);
   totalTime = studyDurations[currentStudy];
   time = 0;
+  paused = false;
+  const pb = document.getElementById('play');
+  if(pb) pb.textContent = 'Pause';
+  studyHoldUntil = performance.now() + totalTime*1000;
   document.querySelectorAll('.study').forEach((el,idx)=>el.classList.toggle('active',idx===currentStudy));
   document.getElementById('notes').innerHTML = studyNotes[currentStudy];
 }
@@ -793,6 +810,8 @@ function setStudy(i){
 // resumes automatically a few seconds after the stream goes quiet.
 let liveState = null;
 let liveSeenAt = -Infinity;
+// Manual drive sliders hold rendering while the user drags them.
+let manualHoldUntil = 0;
 let liveHoldUntil = 0;
 let liveEnabled = true;
 let prevAngles = null;
@@ -839,7 +858,8 @@ try {
 
 function liveActive(){
   const now = performance.now();
-  return liveEnabled && liveState && (now - liveSeenAt) < 4000 && now < liveHoldUntil;
+  return liveEnabled && now >= studyHoldUntil && now >= manualHoldUntil &&
+         liveState && (now - liveSeenAt) < 4000 && now < liveHoldUntil;
 }
 
 function applyLiveState(s){
@@ -864,8 +884,11 @@ function applyLiveState(s){
 }
 
 function update(){
-  const live = liveActive();
-  if (live) applyLiveState(liveState); else sampleStudy(currentStudy, time);
+  const manual = manualActive();
+  const live = !manual && liveActive();
+  if (manual) applyManualState();
+  else if (live) applyLiveState(liveState);
+  else sampleStudy(currentStudy, time);
   applyAngles();
   mount.updateMatrixWorld(true);
   updateTendons();
@@ -877,7 +900,7 @@ function update(){
   });
 
   document.getElementById('frame').textContent = Math.floor(time*60);
-  document.getElementById('tread').textContent = live ? ('LIVE · ' + (liveState.goal || 'moving')) : time.toFixed(2);
+  document.getElementById('tread').textContent = manual ? 'MANUAL' : live ? ('LIVE · ' + (liveState.goal || 'moving')) : time.toFixed(2);
   document.getElementById('time').textContent = `${time.toFixed(2)} / ${totalTime.toFixed(2)}`;
   document.getElementById('scrub').value = clamp(time/totalTime,0,1)*1000;
   ['index-mcp','index-pip','middle-mcp','middle-pip','thumb-cmc','thumb-mcp'].forEach(id => {
@@ -915,6 +938,41 @@ document.getElementById('scrub').addEventListener('input', e=>{ time = parseInt(
 document.querySelectorAll('.study').forEach(el => el.addEventListener('click',()=>setStudy(parseInt(el.dataset.s))));
 
 document.getElementById('v-live').addEventListener('change', e=>{ liveEnabled = e.target.checked; });
+
+// Manual drive: per-finger curl sliders. Dragging previews locally (and
+// holds off live rendering); releasing posts the pose to the bridge so the
+// physics sim holds it.
+const manualCurl = {index:0, middle:0, ring:0, pinky:0, thumb:0};
+const CURL_MAX = {
+  index:  {cmc:25, mcp:88, pip:98, dip:75},
+  middle: {cmc:25, mcp:88, pip:98, dip:75},
+  ring:   {cmc:25, mcp:88, pip:98, dip:75},
+  pinky:  {cmc:25, mcp:88, pip:98, dip:75},
+  thumb:  {cmc:30, mcp:35, ip:20},
+};
+function manualActive(){ return performance.now() < manualHoldUntil; }
+function applyManualState(){
+  resetAngles();
+  FINGERS.forEach(f => {
+    const c = manualCurl[f];
+    JOINTS[f].forEach(j => { state.angles[f][j] = c * (CURL_MAX[f][j] || 0); });
+    state.emg[f].flex = c;
+  });
+}
+FINGERS.forEach(f => {
+  const el = document.getElementById('mc-'+f);
+  if(!el) return;
+  el.addEventListener('input', ()=>{
+    manualCurl[f] = parseInt(el.value, 10)/100;
+    document.getElementById('mc-'+f+'Val').textContent = el.value+'%';
+    manualHoldUntil = performance.now() + 6000;
+  });
+  el.addEventListener('change', ()=>{
+    manualHoldUntil = performance.now() + 6000;
+    fetch('/pose', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({finger_targets: Object.assign({}, manualCurl), duration_s: 6})}).catch(()=>{});
+  });
+});
 
 ['links','cords','pulleys','actuators','skeleton'].forEach(id=>{
   document.getElementById('v-'+id).addEventListener('change', e=>{

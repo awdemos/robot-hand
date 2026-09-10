@@ -403,6 +403,8 @@
   });
 
   let localSim = { goal: null, goalUntil: 0, wavePhase: 0 };
+  // joint maxima (degrees) for mapping 0..1 curl onto the offline skeleton
+  const MAXA = { cmc: 55, mcp: 90, pip: 100, dip: 75, ip: 55 };
   function offlineTick(dt) {
     if (localSim.goal === "wave") { localSim.wavePhase += dt * 9; curYaw = Math.sin(localSim.wavePhase) * 0.55; }
     if (localSim.goal && performance.now() > localSim.goalUntil) {
@@ -488,7 +490,6 @@
   });
   addEventListener("wheel", (e) => { cam.dist = Math.max(12, Math.min(46, cam.dist + e.deltaY * 0.02)); }, { passive: true });
 
-  rebuildTendons(null);
   connectSSE();
   api("/arm").then((s) => { bridgeLive = true; setConn(true); lastState = s; applyState(s); updateHUD(s); }).catch(() => setConn(false));
 
