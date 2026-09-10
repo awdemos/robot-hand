@@ -289,7 +289,7 @@ const SEG_LEN = {
   middle: [3.9, 2.6, 2.0, 1.5],
   ring:   [3.7, 2.4, 1.8, 1.35],
   pinky:  [3.0, 1.9, 1.4, 1.05],
-  thumb:  [2.2, 2.0, 1.6]
+  thumb:  [1.7, 1.8, 1.4]
 };
 // Right hand, palm down (-y), fingers toward the camera (-z). Viewed from the
 // fingertip side, a right hand's thumb sits on the viewer's RIGHT — so the
@@ -1013,11 +1013,27 @@ function syncPlacementUI(){
     document.getElementById(valId).textContent = fmt(placement[key]);
   });
 }
+// Placement slider updates are coalesced to the next animation frame. Range
+// `input` events can fire many times per frame during a fast drag; applying
+// the transform immediately on each one causes yaw/pitch/roll jitter.
+let placementRaf = null;
+function schedulePlacementApply(){
+  if(placementRaf) return;
+  placementRaf = requestAnimationFrame(()=>{
+    applyPlacement();
+    placementRaf = null;
+  });
+}
 placementUI.forEach(([key, valId, fmt])=>{
-  document.getElementById(key).addEventListener('input', e=>{
+  const el = document.getElementById(key);
+  el.addEventListener('input', e=>{
     placement[key] = parseFloat(e.target.value);
     document.getElementById(valId).textContent = fmt(placement[key]);
-    applyPlacement();
+    schedulePlacementApply();
+  });
+  // Persist only when the user releases the slider; writing localStorage on
+  // every input event can also stutter the render thread during fast dragging.
+  el.addEventListener('change', ()=>{
     localStorage.setItem(PLACEMENT_KEY, JSON.stringify(placement));
   });
 });
