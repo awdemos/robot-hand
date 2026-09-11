@@ -5,6 +5,15 @@ A biomechanical tendon-pulley hand with two faces:
 1. **Engineering lab page** — `index.html` is a self-contained Three.js kinematic study (no build step, vendored Three.js). It shows 38 colored cords, 19 joints, open-frame stainless links with in-channel tendon routing, sheaves, and a library of 5 movement studies: fist, ripple, pinch, hand signs, every actuator sweep.
 2. **Live physics bridge** — `bridge/server.py` runs the tendon simulation as an HTTP/SSE server. Replicanta organisms connect to it and drive the hand by their own volition.
 
+In Replicanta terms, the hand is an effector module — and this repo is the
+hardware side of it: the tendon physics, the HTTP/SSE bridge, and the two
+viewers. The organism-facing pieces live in the Replicanta checkout: the
+`tendon-hand` Lua module (`../replicanta/modules/tendon-hand/`, enabled by
+default) and the `ArmService` Python service
+(`../replicanta/src/replicanta/tendon_hand.py`) it uses to reach the bridge.
+The bridge API is the only interface between the two; anything that can POST
+to it can drive the hand.
+
 ## Files
 
 - `index.html` — standalone kinematic study viewer (single file, but it loads Three.js from `bridge/vendor/`, so serve the repo root)
@@ -64,6 +73,12 @@ interactive whenever the bridge is idle. The top-left corner shows
 and EMG bars reflect the live state too.
 
 ## Replicanta integration
+
+Data flow: the organism writes `hand: fist 3` in one of its own utterances
+(or you type `/hand goal fist 3` in the TUI) → the `tendon-hand` Lua module
+parses the directive → `ArmService` POSTs `/goal` to this bridge → the
+tendon sim moves the joints → `/events` (SSE) pushes the new state to the
+lab page and the old viewer, which render it live.
 
 Replicanta's default voice model is `ternary-bonsai-1.7b-f16` (Ternary-Bonsai-1.7B, F16 GGUF imported into the local Ollama from `../models/prism-ml/`). Override anytime with `OLLAMA_MODEL`.
 
