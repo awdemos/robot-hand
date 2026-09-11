@@ -6,6 +6,13 @@
 (() => {
   "use strict";
 
+  // Guard and error surfacing must exist before any THREE use: if three.js
+  // failed to load, the code below would abort with no message and no fallback.
+  if (typeof THREE === "undefined" || !THREE.WebGLRenderer) { showErr("three.js failed to load"); return; }
+  if (!THREE.CatmullRomCurve3 || !THREE.TubeGeometry) { showErr("three.js missing geometry constructors"); return; }
+  window.addEventListener("error", (e) => showErr("js error: " + e.message));
+  window.addEventListener("unhandledrejection", (e) => showErr("promise: " + (e.reason || "")));
+
   const FINGERS = ["thumb", "index", "middle", "ring", "pinky"];
   const JOINT_NAMES = { thumb: ["cmc", "mcp", "ip"], index: ["mcp", "pip", "dip"], middle: ["mcp", "pip", "dip"], ring: ["mcp", "pip", "dip"], pinky: ["mcp", "pip", "dip"] };
   const D2R = Math.PI / 180;
@@ -232,6 +239,7 @@
   // State variables
   let bridgeLive = false;
   let lastState = null;
+  let appliedState = null;
   const cur = { thumb: 0.05, index: 0.05, middle: 0.05, ring: 0.05, pinky: 0.05 };
   let curSpread = 0.12, curOpp = 0.1, curPitch = 0, curYaw = 0;
   const curAngles = { thumb: { cmc: 0, mcp: 0, ip: 0 }, index: { mcp: 0, pip: 0, dip: 0 }, middle: { mcp: 0, pip: 0, dip: 0 }, ring: { mcp: 0, pip: 0, dip: 0 }, pinky: { mcp: 0, pip: 0, dip: 0 } };
@@ -312,11 +320,11 @@
       let tip = null;
       for (let i = 0; i < digit.joints.length; i++) {
         const j = digit.joints[i];
-        // pulley world position
+        // pulley position, converted from world into armRoot-local (meshes parent to armRoot)
         const pulleyLocal = new THREE.Vector3(side * j.rad * 0.6, 0, -j.len * (i === 0 ? 0.0 : 1.0));
-        const worldP = pulleyLocal.clone().applyMatrix4(j.pivot.matrixWorld);
-        points.push(worldP);
-        if (i === digit.joints.length - 1) tip = worldP;
+        const p = armRoot.worldToLocal(pulleyLocal.applyMatrix4(j.pivot.matrixWorld));
+        points.push(p);
+        if (i === digit.joints.length - 1) tip = p;
       }
       if (tip) {
         const end = tip.clone().add(new THREE.Vector3(side * 0.12, 0.05, -0.4));
@@ -325,7 +333,7 @@
 
       // Sag based on slack: low force = more sag
       const lastJoint = JOINT_NAMES[f][JOINT_NAMES[f].length - 1];
-      const force = curForces[f][lastJoint][kind] || 0;
+      const force = curForces[f][lastJoint][kind === "flexor" ? "flex" : "ext"] || 0;
       const slack = Math.max(0, 1 - force / 35);
       for (let i = 1; i < points.length - 1; i++) {
         points[i].y -= slack * (0.2 + 0.2 * Math.sin(i + now * 0.001));
@@ -363,6 +371,15 @@
   }
   function escapeHtml(t) {
     return String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // telemetry rows for the TENDON TELEMETRY panel (ids t-<f> / v-<f> read by updateHUD)
+  const trows = document.getElementById("trows");
+  for (const f of FINGERS) {
+    const row = document.createElement("div");
+    row.className = "frow";
+    row.innerHTML = `<span>${f}</span><span class="tbar"><i id="t-${f}"></i></span><span id="v-${f}">0%</span>`;
+    trows.appendChild(row);
   }
 
   // manual UI
@@ -452,6 +469,8 @@
     const el = document.getElementById("conn");
     el.textContent = on ? "● bridge live — replicanta wired" : "● offline — direct drive";
     el.classList.toggle("on", on);
+    // goals only act on the live bridge; offline they would be no-ops
+    document.querySelectorAll("#goals button").forEach((b) => { b.disabled = !on; });
   }
   function showErr(msg) {
     const el = document.getElementById("conn");
@@ -459,13 +478,12 @@
     el.classList.remove("on");
   }
 
-  window.addEventListener("error", (e) => showErr("js error: " + e.message));
-  window.addEventListener("unhandledrejection", (e) => showErr("promise: " + (e.reason || "")));
-
   function resize() {
     if (webglFailed) {
       canvas.width = innerWidth * devicePixelRatio;
       canvas.height = innerHeight * devicePixelRatio;
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
       return;
     }
     renderer.setSize(innerWidth, innerHeight, false);
@@ -474,9 +492,6 @@
   }
   addEventListener("resize", resize);
   resize();
-
-  if (typeof THREE === "undefined" || !THREE.WebGLRenderer) { showErr("three.js failed to load"); return; }
-  if (!THREE.CatmullRomCurve3 || !THREE.TubeGeometry) { showErr("three.js missing geometry constructors"); return; }
 
   // camera orbit
   let dragging = false, px = 0, py = 0;
@@ -490,6 +505,8 @@
   });
   addEventListener("wheel", (e) => { cam.dist = Math.max(12, Math.min(46, cam.dist + e.deltaY * 0.02)); }, { passive: true });
 
+  setConn(false);
+  scene.updateMatrixWorld(true);
   connectSSE();
   api("/arm").then((s) => { bridgeLive = true; setConn(true); lastState = s; applyState(s); updateHUD(s); }).catch(() => setConn(false));
 
@@ -498,7 +515,7 @@
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     if (!bridgeLive) offlineTick(dt);
-    else if (lastState) applyState(lastState);
+    else if (lastState && lastState !== appliedState) { applyState(lastState); appliedState = lastState; }
     if (webglFailed) { draw2D(); requestAnimationFrame(frame); return; }
     const cp = cam.phi, ct = cam.theta;
     camera.position.set(
@@ -508,7 +525,7 @@
     );
     camera.lookAt(cam.target);
     armRoot.position.y = Math.sin(now * 0.0006) * 0.06;
-    try { renderer.render(scene, camera); } catch (e) { showErr("render failed: " + e.message); return; }
+    try { renderer.render(scene, camera); } catch (e) { showErr("render failed: " + e.message); requestAnimationFrame(frame); return; }
     requestAnimationFrame(frame);
   }
 

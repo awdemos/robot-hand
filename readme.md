@@ -2,15 +2,16 @@
 
 A biomechanical tendon-pulley hand with two faces:
 
-1. **Engineering lab page** — `index.html` is a self-contained Three.js kinematic study (no build step, vendored Three.js). It shows 38 colored cords, 19 joints, open-frame stainless links with in-channel tendon routing, sheaves, and a library of 05 movement studies: fist, ripple, pinch, hand signs, every actuator sweep.
+1. **Engineering lab page** — `index.html` is a self-contained Three.js kinematic study (no build step, vendored Three.js). It shows 38 colored cords, 19 joints, open-frame stainless links with in-channel tendon routing, sheaves, and a library of 5 movement studies: fist, ripple, pinch, hand signs, every actuator sweep.
 2. **Live physics bridge** — `bridge/server.py` runs the tendon simulation as an HTTP/SSE server. Replicanta organisms connect to it and drive the hand by their own volition.
 
 ## Files
 
-- `index.html` — standalone kinematic study viewer (open in any static server)
+- `index.html` — standalone kinematic study viewer (single file, but it loads Three.js from `bridge/vendor/`, so serve the repo root)
 - `bridge/server.py` — stdlib-only HTTP/SSE physics bridge
 - `bridge/viewer.js` — older live-SSE 3D hand viewer (also served by the bridge)
-- `bridge/vendor/three.min.js` — vendored Three.js (r152)
+- `bridge/vendor/three.min.js` — vendored Three.js UMD build (r152), used by the old viewer
+- `bridge/vendor/three.module.js` — vendored Three.js ES module build (r160), used by the lab page via import map
 - `../replicanta/src/replicanta/tendon_hand.py` — `ArmService` exposed to Lua modules
 - `../replicanta/modules/tendon-hand/` — Lua module providing `/hand` commands and volitional hooks
 
@@ -97,6 +98,8 @@ A background `ArmService` thread listens to bridge telemetry and, when volition 
 - `POST /goal` — `{"kind": "reach", "duration_s": 4}`
 - `POST /pose` — explicit per-finger/wrist/forearm spec
 - `POST /emotion` — `{"stress", "arousal", "mood"}`
+
+`/actuator`, `/pose`, and `/goal` all honor `duration_s`: the command drives the tendons for that long, then the hand relaxes back toward the rest pose (the closed-loop controllers resume).
 - `GET /events` — SSE stream (`type: arm` messages)
 
 ## Quick test
@@ -140,5 +143,5 @@ Copy the structure of an existing study; each keyframe is a function `t -> angle
 ## Notes
 
 - The bridge defaults to `127.0.0.1:8765`. Change with `--host`/`--port`.
-- The lab page loads Three.js from a CDN; the bridge also serves a vendored fallback if you want to make it fully offline.
+- The lab page loads Three.js from the vendored `bridge/vendor/three.module.js` (r160) via an import map — no CDN needed, so it works fully offline when served by the bridge.
 - Headless browsers used for CI screenshots often have no WebGL/2D context; verify on a real desktop browser.

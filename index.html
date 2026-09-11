@@ -308,16 +308,29 @@ const D2R = Math.PI/180;
 // Default placement rolls the hand 180°: palm faces up. User tweaks persist
 // in localStorage.
 const mount = new THREE.Group();
+mount.rotation.order = 'YXZ'; // compose in the panel's labeled order: yaw, then pitch, then roll
 scene.add(mount);
 const root = new THREE.Group();
 mount.add(root);
 
 const PLACEMENT_KEY = 'handPlacement.v1';
 const DEFAULT_PLACEMENT = {px:0, py:0, pz:0, yaw:0, pitch:0, roll:180};
+// Valid range per key — mirrors the placement slider min/max in the markup,
+// so a corrupted or hand-edited entry can't bypass the UI clamps.
+const PLACEMENT_RANGES = {px:[-8,8], py:[-4,6], pz:[-8,8], yaw:[-180,180], pitch:[-180,180], roll:[-180,180]};
 function loadPlacement(){
   try{
     const saved = JSON.parse(localStorage.getItem(PLACEMENT_KEY) || 'null');
-    if(saved && typeof saved === 'object') return {...DEFAULT_PLACEMENT, ...saved};
+    if(saved && typeof saved === 'object'){
+      const out = {...DEFAULT_PLACEMENT};
+      for(const k of Object.keys(out)){
+        const v = Number(saved[k]);
+        if(!Number.isFinite(v)) continue; // bad/missing key -> default
+        const [lo, hi] = PLACEMENT_RANGES[k];
+        out[k] = Math.max(lo, Math.min(hi, v));
+      }
+      return out;
+    }
   }catch(e){ /* corrupt storage -> defaults */ }
   return {...DEFAULT_PLACEMENT};
 }
@@ -597,9 +610,12 @@ FINGERS.forEach(f => {
 const skelMat = new THREE.LineBasicMaterial({ color:0x58a6ff, transparent:true, opacity:0.22 });
 const skelLines = [];
 FINGERS.forEach(f => {
-  const pts = [new THREE.Vector3(0,0,0)];
-  let z=0; SEG_LEN[f].forEach(len => { z-=len; pts.push(new THREE.Vector3(0,0,z)); });
-  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  // Fixed-size position buffer rewritten in place each frame — the same
+  // zero-allocation pattern as the tendon lines above.
+  const nPts = SEG_LEN[f].length + 1;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nPts*3), 3));
+  geo.setDrawRange(0, nPts);
   const line = new THREE.Line(geo, skelMat); line.visible=false; root.add(line); skelLines.push(line);
 });
 
@@ -831,9 +847,15 @@ let manualHoldUntil = 0;
 let liveHoldUntil = 0;
 let liveEnabled = true;
 let prevAngles = null;
+// Without the bridge (static hosting) /events 404s and the browser would
+// auto-reconnect forever, re-firing onerror every few seconds for the life
+// of the page. Give up after a few consecutive failures; any successful
+// message resets the count.
+let esErrors = 0;
 try {
   const es = new EventSource('/events');
   es.onmessage = e => {
+    esErrors = 0;
     try {
       const msg = JSON.parse(e.data);
       if (msg.type === 'arm' && msg.state) {
@@ -869,7 +891,10 @@ try {
       }
     } catch(_){}
   };
-  es.onerror = () => { liveState = null; };
+  es.onerror = () => {
+    liveState = null;
+    if(++esErrors >= 5) es.close();
+  };
 } catch(_) { /* opened without the bridge -> study mode only */ }
 
 function liveActive(){
@@ -911,10 +936,14 @@ function update(){
   updateTendons();
   skelLines.forEach((line,fi)=>{
     if(!line.visible) return;
-    const f=FINGERS[fi]; const pts=[];
-    pts.push(digits[f].anchor.position.clone());
-    let z=0; digits[f].joints.forEach(j => { z-=j.len; pts.push(new THREE.Vector3(0,0,z)); });
-    line.geometry.setFromPoints(pts);
+    const f=FINGERS[fi];
+    const posAttr = line.geometry.attributes.position;
+    const arr = posAttr.array;
+    let pi = 0;
+    const a = digits[f].anchor.position;
+    arr[pi++]=a.x; arr[pi++]=a.y; arr[pi++]=a.z;
+    let z=0; digits[f].joints.forEach(j => { z-=j.len; arr[pi++]=0; arr[pi++]=0; arr[pi++]=z; });
+    posAttr.needsUpdate = true;
   });
 
   document.getElementById('frame').textContent = Math.floor(time*60);
@@ -938,7 +967,9 @@ function animate(now){
   const dt = Math.min(0.05,(now-last)/1000); last=now;
   if(!paused){
     time += dt;
-    if(time > totalTime){ time = totalTime; paused=true; document.getElementById('play').textContent='Play'; }
+    // While live mode renders the bridge stream the study clock is not what
+    // is on screen — let it run past the study end instead of force-pausing.
+    if(!liveActive() && time > totalTime){ time = totalTime; paused=true; document.getElementById('play').textContent='Play'; }
   }
   update();
   controls.update();
@@ -948,7 +979,12 @@ function animate(now){
 
 // UI wiring
 const playBtn = document.getElementById('play');
-playBtn.addEventListener('click',()=>{ paused=!paused; playBtn.textContent = paused?'Play':'Pause'; if(time>=totalTime){time=0;paused=false;playBtn.textContent='Pause';} });
+function togglePlay(){
+  if(time >= totalTime){ time=0; paused=false; } // end-of-study: reset and replay
+  else paused = !paused;
+  playBtn.textContent = paused?'Play':'Pause';
+}
+playBtn.addEventListener('click', togglePlay);
 document.getElementById('restart').addEventListener('click',()=>{ time=0; paused=false; playBtn.textContent='Pause'; });
 document.getElementById('prev').addEventListener('click',()=>setStudy(currentStudy-1));
 document.getElementById('next').addEventListener('click',()=>setStudy(currentStudy+1));
@@ -1059,7 +1095,8 @@ document.getElementById('resetPlacement').addEventListener('click', ()=>{
 syncPlacementUI();
 
 window.addEventListener('keydown', e=>{
-  if(e.code==='Space'){ e.preventDefault(); paused=!paused; playBtn.textContent=paused?'Play':'Pause'; }
+  if(e.target.closest?.('input,textarea,select,button')) return;
+  if(e.code==='Space'){ e.preventDefault(); togglePlay(); }
   if(e.code==='ArrowLeft') setStudy(currentStudy-1);
   if(e.code==='ArrowRight') setStudy(currentStudy+1);
   if(e.code==='KeyR'){ time=0; paused=false; playBtn.textContent='Pause'; }
@@ -1085,8 +1122,14 @@ FINGERS.forEach(f => {
 
 // URL deep-link
 const params = new URLSearchParams(location.search);
-if(params.has('study')) setStudy(parseInt(params.get('study'))-1);
-if(params.has('t')){ time = parseFloat(params.get('t')); time = clamp(time,0,totalTime); paused = true; playBtn.textContent='Play'; }
+if(params.has('study')){
+  const s = Number(params.get('study'));
+  if(Number.isFinite(s)) setStudy(s-1); // 1-based; invalid values fall back to the current study
+}
+if(params.has('t')){
+  const t = Number(params.get('t'));
+  if(Number.isFinite(t)){ time = clamp(t,0,totalTime); paused = true; playBtn.textContent='Play'; }
+}
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();

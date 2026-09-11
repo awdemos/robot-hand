@@ -79,14 +79,12 @@ def _clamp(x, lo=0.0, hi=1.0):
     return max(lo, min(hi, float(x)))
 
 
+def _reject_const(x):
+    raise ValueError(f"invalid JSON constant {x!r}")
+
+
 def _sigmoid(x, k=10.0, mid=0.5):
     return 1.0 / (1.0 + math.exp(-k * (x - mid)))
-
-
-def _target_from_activation(activation, joint):
-    """Map a 0..1 motor activation to a target joint angle (degrees)."""
-    max_a = MAX_ANGLE[joint]
-    return activation ** 0.85 * max_a
 
 
 # ---------------------------------------------------------------- pre-designed postures
@@ -240,6 +238,7 @@ class Tendon:
     motor_retraction: float = 0.0
     force: float = 0.0
     slip: float = 0.0
+    override: tuple = None            # (activation, until) set by /actuator
 
     def update(self, dt, path_delta):
         target_retraction = self.activation * self.max_retraction
@@ -275,7 +274,7 @@ class Joint:
             self.extensor = Tendon(f"extensor_{self.name}")
             self.extensor.activation = 0.06
 
-    def step(self, dt, target_angle, load_contact, tremor, stress):
+    def step(self, dt, target_angle, load_contact, tremor, stress, now):
         max_a = MAX_ANGLE[self.name]
         target_angle = _clamp(target_angle, 0.0, max_a)
 
@@ -287,6 +286,15 @@ class Joint:
         self.flexor.activation = desired_activation
         coact = 0.04 + 0.22 * stress
         self.extensor.activation = 0.06 + coact + 0.15 * (self.angle / max_a) + _clamp(-1.2 * err, 0.0, 0.6)
+        # a live /actuator override wins over the closed loop until it expires
+        for tendon in (self.flexor, self.extensor):
+            if tendon.override is None:
+                continue
+            act, until = tendon.override
+            if now < until:
+                tendon.activation = act
+            else:
+                tendon.override = None
 
         ma_f, ma_e = MOMENT_ARM[self.name]
         stretch = math.radians(self.angle)
@@ -347,7 +355,7 @@ class HandModel:
         self.emotion = {"stress": 0.2, "arousal": 0.3, "mood": "calm"}
         self._tremor_phase = 0.0
         self._lock = threading.Lock()
-        self._pose_duration = 2.0
+        self._pose_deadline = None
 
     def set_posture(self, spec):
         name = str(spec.get("name", "")).lower()
@@ -357,6 +365,7 @@ class HandModel:
         p = POSTURES[name]
         with self._lock:
             self.goal = {"kind": f"posture:{name}", "until": time.monotonic() + dur}
+            self._pose_deadline = None  # a stale pose must not clobber this
             self._apply_posture_dict(p)
 
     def _apply_posture_dict(self, p):
@@ -425,7 +434,7 @@ class HandModel:
             for ax in ("roll",):
                 if ax in fa:
                     self.forearm_target[ax] = max(-1.0, min(1.0, float(fa[ax])))
-            self._pose_duration = _clamp(spec.get("duration_s", 2.0), 0.05, 10.0)
+            self._pose_deadline = time.monotonic() + _clamp(spec.get("duration_s", 2.0), 0.05, 10.0)
             self.goal = None
 
     def set_actuator(self, spec):
@@ -433,14 +442,16 @@ class HandModel:
         f = str(spec.get("finger", ""))
         j = str(spec.get("joint", ""))
         side = str(spec.get("side", "flexor")).lower()
+        if side not in ("flexor", "extensor"):
+            raise ValueError(f"invalid actuator side {side!r}; try flexor|extensor")
         activation = _clamp(spec.get("activation", 0.0))
         if f not in FINGERS or j not in JOINTS[f]:
             raise ValueError(f"invalid actuator {f}/{j}")
+        dur = _clamp(spec.get("duration_s", 3.0), 0.2, 15.0)
         with self._lock:
             tendon = self.joints[f][j].flexor if side == "flexor" else self.joints[f][j].extensor
-            tendon.activation = activation
-            # also nudge the target so the UI slider reflects the change
-            self.joint_target[f][j] = _target_from_activation(activation, j)
+            # override wins over the closed loop until `until`, then lapses
+            tendon.override = (activation, time.monotonic() + dur)
 
     def set_goal(self, spec):
         kind = str(spec.get("kind", "")).lower()
@@ -449,6 +460,7 @@ class HandModel:
             raise ValueError(f"unknown goal {kind!r}; kinds: {sorted(GOAL_POSTURES)}")
         with self._lock:
             self.goal = {"kind": kind, "until": time.monotonic() + dur, "wave_phase": 0.0}
+            self._pose_deadline = None  # a stale pose must not clobber this
             self._apply_posture_dict(GOAL_POSTURES[kind])
             self.load_contact = kind == "grasp"
 
@@ -460,8 +472,23 @@ class HandModel:
             if "mood" in spec:
                 self.emotion["mood"] = str(spec["mood"])[:32]
 
+    def _relax_open(self):
+        # settle everything back toward the open hand; shared by the goal and
+        # pose deadline paths
+        for f in FINGERS:
+            self.curl_target[f] = min(self.curl_target[f], 0.12)
+            for j in JOINTS[f]:
+                self.joint_target[f][j] = min(self.joint_target[f][j], 15.0)
+        self.spread_target = 0.15
+        self.thumb_opposition = 0.05
+        self.wrist_target = {"pitch": 0.0, "yaw": 0.0}
+        self.forearm_target = {"roll": 0.0}
+        self.load_contact = False
+        self.goal = None
+
     def step(self, dt):
         with self._lock:
+            now = time.monotonic()
             stress = self.emotion["stress"]
             arousal = self.emotion["arousal"]
             self._tremor_phase += dt * (8.0 + 12.0 * arousal)
@@ -474,17 +501,11 @@ class HandModel:
                 # renders at 0.6, so together the whole hand rocks side to side
                 self.wrist_target["yaw"] = s * 0.6
                 self.forearm_target["roll"] = s * 0.5
-            if self.goal and time.monotonic() > self.goal["until"]:
-                for f in FINGERS:
-                    self.curl_target[f] = min(self.curl_target[f], 0.12)
-                    for j in JOINTS[f]:
-                        self.joint_target[f][j] = min(self.joint_target[f][j], 15.0)
-                self.spread_target = 0.15
-                self.thumb_opposition = 0.05
-                self.wrist_target = {"pitch": 0.0, "yaw": 0.0}
-                self.forearm_target = {"roll": 0.0}
-                self.load_contact = False
-                self.goal = None
+            if self.goal and now > self.goal["until"]:
+                self._relax_open()
+            if self._pose_deadline is not None and now > self._pose_deadline:
+                self._pose_deadline = None
+                self._relax_open()
 
             for f in FINGERS:
                 for j in JOINTS[f]:
@@ -492,7 +513,7 @@ class HandModel:
                     if self.curl_target[f] and not self.joint_target[f][j]:
                         target = self.curl_target[f] * MAX_ANGLE[j]
                     tremor = tremor_amp * math.sin(self._tremor_phase * 1.3 + hash(j) % 7)
-                    self.joints[f][j].step(dt, target, self.load_contact, tremor, stress)
+                    self.joints[f][j].step(dt, target, self.load_contact, tremor, stress, now)
 
             for ax in ("pitch", "yaw"):
                 err = self.wrist_target[ax] - self.wrist[ax]
@@ -569,7 +590,7 @@ class EventBus:
 
 
 HERE = Path(__file__).resolve().parent
-ROOT_PAGE = Path("/var/home/a/code/robot-hand/index.html")
+ROOT_PAGE = HERE.parent / "index.html"
 STATIC = {
     "/": ROOT_PAGE,
     "/viewer.js": HERE / "viewer.js",
@@ -595,7 +616,7 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         if n <= 0 or n > 64_000:
             raise ValueError("bad content length")
-        return json.loads(self.rfile.read(n).decode())
+        return json.loads(self.rfile.read(n).decode(), parse_constant=_reject_const)
 
     def log_message(self, fmt, *args):
         log.debug("%s %s", self.address_string(), fmt % args)
@@ -637,6 +658,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
         return
         self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+
+    def do_OPTIONS(self):
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
     def do_POST(self):
         path = urlparse(self.path).path
         try:
@@ -687,15 +716,17 @@ class Handler(BaseHTTPRequestHandler):
             self.server.bus.unsubscribe(q)
 
 
-def run(port=8765):
+def run(port=8765, host="127.0.0.1"):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     model = HandModel()
     bus = EventBus()
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = ThreadingHTTPServer((host, port), Handler)
     server.model = model
     server.bus = bus
+    _last_publish = 0.0
 
     def sim_loop():
+        nonlocal _last_publish
         t0 = time.monotonic()
         while True:
             time.sleep(0.01)
@@ -703,11 +734,13 @@ def run(port=8765):
             dt = min(0.02, now - t0)
             t0 = now
             model.step(dt)
-            if int(now * 10) % 2 == 0:
+            # ~10 Hz telemetry: one publish per 100 ms window
+            if now - _last_publish >= 0.1:
+                _last_publish = now
                 bus.publish({"type": "arm", "state": model.snapshot()})
 
     threading.Thread(target=sim_loop, daemon=True).start()
-    log.info("hand bridge on http://127.0.0.1:%s", port)
+    log.info("hand bridge on http://%s:%s", host, port)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -718,6 +751,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
-    run(args.port)
+    run(port=args.port, host=args.host)
