@@ -847,15 +847,17 @@ let manualHoldUntil = 0;
 let liveHoldUntil = 0;
 let liveEnabled = true;
 let prevAngles = null;
-// Without the bridge (static hosting) /events 404s and the browser would
-// auto-reconnect forever, re-firing onerror every few seconds for the life
-// of the page. Give up after a few consecutive failures; any successful
-// message resets the count.
-let esErrors = 0;
-try {
+// Capped exponential backoff for /events: without the bridge (static hosting)
+// the endpoint never exists, so EventSource's fixed-interval auto-reconnect
+// would spam onerror forever — but the stream must still recover as soon as
+// the bridge comes back (a permanent give-up strands the page until reload,
+// e.g. after a bridge restart). Retry from 1s up to 30s; a message resets it.
+let esRetry = 0;
+let esRetryTimer = null;
+function openSSE(){
   const es = new EventSource('/events');
   es.onmessage = e => {
-    esErrors = 0;
+    esRetry = 0;
     try {
       const msg = JSON.parse(e.data);
       if (msg.type === 'arm' && msg.state) {
@@ -893,9 +895,12 @@ try {
   };
   es.onerror = () => {
     liveState = null;
-    if(++esErrors >= 5) es.close();
+    es.close();
+    esRetry = esRetry ? Math.min(30000, esRetry * 2) : 1000;
+    esRetryTimer = setTimeout(openSSE, esRetry);
   };
-} catch(_) { /* opened without the bridge -> study mode only */ }
+}
+try { openSSE(); } catch(_) { /* opened without the bridge -> study mode only */ }
 
 function liveActive(){
   const now = performance.now();
@@ -957,8 +962,11 @@ function update(){
   });
   // EMG bars
   FINGERS.forEach(f => {
+    const pct = Math.round(state.emg[f].flex*100);
     const bar = document.getElementById('emg-'+f);
-    if(bar) bar.style.width = Math.round(state.emg[f].flex*100)+'%';
+    if(bar) bar.style.width = pct+'%';
+    const label = document.getElementById('emg-t-'+f);
+    if(label) label.textContent = pct+'%';
   });
 }
 
@@ -1169,7 +1177,12 @@ renderer.domElement.addEventListener('pointermove', e=>{
   if(hit && showCard(e, hit)) return;
   card.style.display = 'none';
 });
+let downAt = null;
+renderer.domElement.addEventListener('pointerdown', e => { downAt = {x: e.clientX, y: e.clientY}; });
 renderer.domElement.addEventListener('click', e=>{
+  // a drag ends in a click at the release point — never pin from a drag
+  if(downAt && (Math.abs(e.clientX - downAt.x) > 5 || Math.abs(e.clientY - downAt.y) > 5)){ downAt = null; return; }
+  downAt = null;
   const hit = pick(e);
   if(hit && showCard(e, hit)){ cardPinned = true; return; }
   cardPinned = false;

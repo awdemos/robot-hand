@@ -2,7 +2,7 @@
 
 A biomechanical tendon-pulley hand with two faces:
 
-1. **Engineering lab page** — `index.html` is a self-contained Three.js kinematic study (no build step, vendored Three.js). It shows 38 colored cords, 19 joints, open-frame stainless links with in-channel tendon routing, sheaves, and a library of 5 movement studies: fist, ripple, pinch, hand signs, every actuator sweep.
+1. **Engineering lab page** — `index.html` is a self-contained Three.js kinematic study (no build step, vendored Three.js). It shows 38 colored cords, 19 joints (a visual metacarpal `cmc` on every finger), open-frame stainless links with in-channel tendon routing, sheaves, and a library of 5 movement studies: fist, ripple, pinch, hand signs, every actuator sweep.
 2. **Live physics bridge** — `bridge/server.py` runs the tendon simulation as an HTTP/SSE server. Replicanta organisms connect to it and drive the hand by their own volition.
 
 In Replicanta terms, the hand is an effector module — and this repo is the
@@ -71,6 +71,12 @@ interactive whenever the bridge is idle. The top-left corner shows
 `LIVE · <goal>` during live control. The **Live bridge** checkbox in
 "View & visibility" switches live rendering off entirely. Joint readouts
 and EMG bars reflect the live state too.
+
+> **Joint count:** the visual model has 19 joints (a `cmc` on every finger),
+> but the physics bridge simulates 15 actuated joints — fingers are
+> `mcp/pip/dip` only, thumb is `cmc/mcp/ip`. The four finger `cmc` joints
+> exist for visual continuity in the kinematic studies; the bridge never
+> drives them.
 
 ## Replicanta integration
 
@@ -150,7 +156,7 @@ uv run --project /var/home/a/code/replicanta replicanta --dir /var/home/a/code/r
 
 Open `index.html` and edit two places:
 
-1. The `STUDIES` array (around the top of the script) — add a new entry with a name, description, notes, and a `keyframes()` function that returns angle curves for the 22 joints over time.
+1. The `STUDIES` array (around the top of the script) — add a new entry with a name, description, notes, and a `keyframes()` function that returns angle curves for the 19 joints over time.
 2. The right-panel movement list in HTML — add a new `<button data-study="5">` (zero-based index).
 
 Copy the structure of an existing study; each keyframe is a function `t -> angle_deg` for every named joint.

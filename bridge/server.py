@@ -53,6 +53,14 @@ JOINTS = {
 
 MAX_ANGLE = {"mcp": 90.0, "pip": 100.0, "dip": 75.0, "cmc": 55.0, "ip": 80.0}
 
+# Deterministic per-joint tremor phase offset (0..2pi). A stable value per
+# joint name keeps the hand's micro-jitter reproducible across process
+# restarts — Python's built-in hash() is salted per run, which shuffled the
+# phase arbitrarily every time the bridge restarted.
+_JOINT_PHASE = {j: (i * 2.39996) % (2.0 * math.pi) for i, j in enumerate(
+    j for f in FINGERS for j in JOINTS[f]
+)}
+
 # Realistic phalanx/metacarpal lengths (cm)
 SEG_LENGTH = {
     "thumb": [("cmc", 1.8), ("mcp", 2.8), ("ip", 2.4)],
@@ -237,7 +245,6 @@ class Tendon:
     activation: float = 0.0
     motor_retraction: float = 0.0
     force: float = 0.0
-    slip: float = 0.0
     override: tuple = None            # (activation, until) set by /actuator
 
     def update(self, dt, path_delta):
@@ -251,7 +258,6 @@ class Tendon:
         passive = self.stiffness * strain
         active = self.max_force * _sigmoid(strain, k=25.0, mid=0.10) * _sigmoid(self.activation, k=12.0, mid=0.15)
         self.force = passive + active
-        self.slip = 0.003 * self.force * (0.5 + 0.5 * math.sin(time.monotonic() * 17.0))
         return self.force
 
 
@@ -436,6 +442,7 @@ class HandModel:
                     self.forearm_target[ax] = max(-1.0, min(1.0, float(fa[ax])))
             self._pose_deadline = time.monotonic() + _clamp(spec.get("duration_s", 2.0), 0.05, 10.0)
             self.goal = None
+            self.load_contact = False  # a grasp's contact must not bleed into a following pose
 
     def set_actuator(self, spec):
         """Drive a single tendon actuator by activation 0..1."""
@@ -512,7 +519,7 @@ class HandModel:
                     target = self.joint_target[f][j]
                     if self.curl_target[f] and not self.joint_target[f][j]:
                         target = self.curl_target[f] * MAX_ANGLE[j]
-                    tremor = tremor_amp * math.sin(self._tremor_phase * 1.3 + hash(j) % 7)
+                    tremor = tremor_amp * math.sin(self._tremor_phase * 1.3 + _JOINT_PHASE[j])
                     self.joints[f][j].step(dt, target, self.load_contact, tremor, stress, now)
 
             for ax in ("pitch", "yaw"):
@@ -656,8 +663,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "max-age=3600")
         self.end_headers()
         self.wfile.write(data)
-        return
-        self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
     def do_OPTIONS(self):
         self.send_response(HTTPStatus.NO_CONTENT)
@@ -702,15 +707,17 @@ class Handler(BaseHTTPRequestHandler):
         q = self.server.bus.subscribe()
         try:
             self.wfile.write(b": connected\n\n")
+            self.wfile.flush()
             while True:
                 try:
                     data = q.get(timeout=10.0)
                 except queue.Empty:
                     self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
                     continue
                 self.wfile.write(f"data: {data}\n\n".encode())
                 self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             pass
         finally:
             self.server.bus.unsubscribe(q)

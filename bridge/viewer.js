@@ -305,6 +305,9 @@
   }
 
   function updateTendons() {
+    // SSE applyState mutates pivots between animation frames; matrixWorld is
+    // only refreshed during render, so force it before sampling joint poses.
+    scene.updateMatrixWorld(true);
     const now = performance.now();
     for (const item of strandMeshes) {
       const f = item.finger;
